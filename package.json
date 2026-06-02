@@ -1,0 +1,60 @@
+{
+  "name": "@viy/liepin-cli",
+  "version": "0.1.0",
+  "description": "猎聘自动化 CLI：批量发消息、自动打招呼、候选人管理、职位搜索。基于 Puppeteer/CDP 驱动本机 Chrome，支持 AI Agent 编排",
+  "keywords": [
+    "liepin",
+    "liepin-cli",
+    "猎聘",
+    "招聘自动化",
+    "hr-automation",
+    "recruitment-automation",
+    "puppeteer",
+    "cdp",
+    "chrome-devtools-protocol",
+    "cli",
+    "agent",
+    "ai-agent",
+    "自动打招呼",
+    "批量发消息",
+    "候选人管理",
+    "hr-tools"
+  ],
+  "homepage": "https://github.com/viy/liepin-cli#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/viy/liepin-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/viy/liepin-cli/issues"
+  },
+  "type": "module",
+  "main": "dist/cli/index.js",
+  "types": "dist/cli/index.d.ts",
+  "bin": {
+    "liepin": "dist/cli/index.js"
+  },
+  "files": [
+    "dist",
+    "skills",
+    "README.md",
+    "AGENTS.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "npm run build && node dist/cli/index.js",
+    "deploy": "node scripts/deploy.mjs",
+    "test": "node --test dist/**/*.test.js"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "puppeteer-core": "^24.29.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "typescript": "^5.3.3"
+  },
+  "author": "Viy",
+  "license": "GPL-3.0"
+}
