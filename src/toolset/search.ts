@@ -4,7 +4,7 @@
 
 import { Page } from 'puppeteer-core';
 import {
-  LIEPIN_API, LIEPIN_LPT_API,
+  LIEPIN_API,
   CITY_CODES, WORKYEAR_CODES, DEGREE_CODES, INDUSTRY_CODES,
   COMPSIZE_CODES, JOBKIND_CODES,
   resolveCity, resolveCode, resolveSalary,

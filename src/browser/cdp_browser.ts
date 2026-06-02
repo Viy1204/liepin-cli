@@ -59,7 +59,6 @@ export class CdpBrowser {
       executablePath,
       args,
       userDataDir: this.options.userDataDir,
-      headless: false, // 我们通过 args 控制 headless
     });
 
     this.page = await this.browser.newPage();
@@ -109,24 +108,5 @@ export class CdpBrowser {
   /** 获取浏览器实例 */
   getBrowser(): Browser | null {
     return this.browser;
-  }
-}
-
-/** 全局浏览器实例 */
-let globalBrowser: CdpBrowser | null = null;
-
-/** 获取全局浏览器实例 */
-export function getGlobalBrowser(): CdpBrowser {
-  if (!globalBrowser) {
-    globalBrowser = new CdpBrowser();
-  }
-  return globalBrowser;
-}
-
-/** 关闭全局浏览器 */
-export async function closeGlobalBrowser(): Promise<void> {
-  if (globalBrowser) {
-    await globalBrowser.close();
-    globalBrowser = null;
   }
 }

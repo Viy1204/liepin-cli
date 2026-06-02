@@ -16,6 +16,7 @@ import { talentCommand } from '../toolset/talent.js';
 import { resumeCommand } from '../toolset/resume.js';
 import { greetCommand } from '../toolset/greet.js';
 import { joblistCommand } from '../toolset/joblist.js';
+import { skillCommand } from '../toolset/skill.js';
 
 /** 命令定义 */
 interface Command {
@@ -34,6 +35,7 @@ interface Command {
     key: string;
     width: number;
   }>;
+  requiresPage?: boolean;
   func: (page: any, options: any) => Promise<any>;
 }
 
@@ -50,6 +52,7 @@ const commands: Command[] = [
   resumeCommand,
   greetCommand,
   joblistCommand,
+  skillCommand,
 ];
 
 /** 显示帮助信息 */
@@ -66,6 +69,7 @@ ${commands.map(cmd => `  ${cmd.name.padEnd(15)} ${cmd.description}`).join('\n')}
 选项:
   --help, -h      显示帮助信息
   --version, -v   显示版本信息
+  --json          以 JSON 格式输出（AI Agent 友好）
 
 示例:
   liepin search 前端工程师
@@ -115,13 +119,22 @@ function parseArgs(args: string[]): { command: string; options: Record<string, a
 }
 
 /** 格式化输出 */
-function formatOutput(data: any, columns: Array<{ header: string; key: string; width: number }>): void {
+function formatOutput(
+  data: any,
+  columns: Array<{ header: string; key: string; width: number }>,
+  asJson: boolean = false,
+): void {
+  if (asJson) {
+    console.log(JSON.stringify(data, null, 2));
+    return;
+  }
+
   if (Array.isArray(data)) {
     // 表格输出
     const header = columns.map(col => col.header.padEnd(col.width)).join(' | ');
     console.log(header);
     console.log('-'.repeat(header.length));
-    
+
     for (const item of data) {
       const row = columns.map(col => {
         const value = String(item[col.key] || '');
@@ -133,9 +146,8 @@ function formatOutput(data: any, columns: Array<{ header: string; key: string; w
     // 详情输出
     for (const [key, value] of Object.entries(data)) {
       const column = columns.find(col => col.key === key);
-      if (column) {
-        console.log(`${column.header}: ${value}`);
-      }
+      const header = column?.header ?? key;
+      console.log(`${header}: ${value}`);
     }
   }
 }
@@ -198,24 +210,30 @@ async function main(): Promise<void> {
     }
   }
 
+  const requiresPage = cmd.requiresPage !== false;
+
   // 启动浏览器
-  const browser = new CdpBrowser();
-  let page;
+  const browser = requiresPage ? new CdpBrowser() : null;
+  let page: any = null;
 
   try {
-    page = await browser.launch();
-    
+    if (browser) {
+      page = await browser.launch();
+    }
+
     // 执行命令
     const result = await cmd.func(page, cmdOptions);
-    
+
     // 格式化输出
-    formatOutput(result, cmd.columns);
+    formatOutput(result, cmd.columns, options.json === true);
   } catch (error) {
     console.error('错误:', error instanceof Error ? error.message : String(error));
     process.exit(1);
   } finally {
     // 关闭浏览器
-    await browser.close();
+    if (browser) {
+      await browser.close();
+    }
   }
 }
 

@@ -155,7 +155,7 @@ export function resolveCity(city: string): string {
 export function resolveCode(value: string, codeMap: Record<string, string>): string {
   if (!value) return '';
   const normalized = value.trim();
-  return codeMap[normalized] || value;
+  return normalized in codeMap ? codeMap[normalized] : value;
 }
 
 /** 解析薪资 */
