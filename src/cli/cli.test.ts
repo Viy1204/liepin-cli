@@ -26,7 +26,7 @@ test('无参数: 显示 help，列出所有命令', async () => {
 
 test('--version: 输出版本号', async () => {
   const { stdout } = await exec('node', [CLI, '--version']);
-  assert.equal(stdout.trim(), 'liepin-cli v0.1.0');
+  assert.match(stdout.trim(), /^liepin-cli v\d+\.\d+\.\d+$/);
 });
 
 test('--help: 显示完整 help（含 --json）', async () => {
@@ -80,4 +80,10 @@ test('-h 等价于 --help', async () => {
   const { stdout } = await exec('node', [CLI, '-h']);
   assert.match(stdout, /--json/);
   assert.match(stdout, /命令:/);
+});
+
+test('help 子命令等价于 --help', async () => {
+  const { stdout } = await exec('node', [CLI, 'help']);
+  assert.match(stdout, /命令:/);
+  assert.match(stdout, /--json/);
 });

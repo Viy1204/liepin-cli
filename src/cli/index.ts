@@ -3,6 +3,9 @@
  * 猎聘 CLI 入口
  */
 
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 import { config } from '../config.js';
 import { CdpBrowser } from '../browser/cdp_browser.js';
 import { loginCommand } from '../toolset/login.js';
@@ -15,6 +18,11 @@ import { resumeCommand } from '../toolset/resume.js';
 import { greetCommand } from '../toolset/greet.js';
 import { joblistCommand } from '../toolset/joblist.js';
 import { skillCommand } from '../toolset/skill.js';
+
+/** 从包根 package.json 读取版本号（dist/cli/index.js -> ../../package.json） */
+const pkg = JSON.parse(
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'package.json'), 'utf-8'),
+);
 
 /** 命令定义 */
 interface Command {
@@ -78,7 +86,7 @@ ${commands.map(cmd => `  ${cmd.name.padEnd(15)} ${cmd.description}`).join('\n')}
 
 /** 显示版本信息 */
 function showVersion(): void {
-  console.log('liepin-cli v0.1.0');
+  console.log(`liepin-cli v${pkg.version}`);
 }
 
 /** 解析命令行参数 */
@@ -170,6 +178,12 @@ async function main(): Promise<void> {
 
   if (options.version) {
     showVersion();
+    return;
+  }
+
+  // 支持裸 `help` 子命令（等价于 --help）
+  if (command === 'help') {
+    showHelp();
     return;
   }
 
