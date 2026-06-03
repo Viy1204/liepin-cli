@@ -53,20 +53,18 @@ export async function chatlist(page: Page, options: ChatlistOptions): Promise<an
     return {
       name: c.name || '',
       sex: c.sex || '',
-      age: String(c.age || ''),
       experience: c.workage ? `${c.workage}年` : '',
       degree: c.edulevel || '',
       city: c.dq || '',
       current_company: c.company || '',
       current_title: c.title || '',
-      want_title: '',
       latest_msg: latestMsg,
       latest_msg_time: timeStr,
-      unread_count: String(c.unreadCount || 0),
-      direction: c.direction || '',
-      resume_url: c.resumeUrl || '',
-      user_id: String(c.userId || ''),
-      im_id: String(c.imId || ''),
+      unread_count: String(c.unReadCnt || 0),
+      direction: String(c.direction ?? ''),
+      // chatmsg 需要的"对方 imId"，而非自己的 imId
+      im_id: String(c.oppositeImId || ''),
+      user_id: String(c.oppositeUserId || ''),
     };
   });
 }
