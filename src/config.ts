@@ -9,10 +9,24 @@ import { existsSync, readFileSync } from 'fs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+function resolveChromePath(): string {
+  if (process.env.CHROME_PATH || process.env.PUPPETEER_EXECUTABLE_PATH) {
+    return process.env.CHROME_PATH || process.env.PUPPETEER_EXECUTABLE_PATH || '';
+  }
+
+  const candidates = [
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+    '/Applications/Chromium.app/Contents/MacOS/Chromium',
+  ];
+
+  return candidates.find(path => existsSync(path)) || '';
+}
+
 /** 默认配置 */
 export const DEFAULT_CONFIG = {
   /** Chrome/Edge 可执行文件路径 */
-  chromePath: process.env.CHROME_PATH || process.env.PUPPETEER_EXECUTABLE_PATH || '',
+  chromePath: resolveChromePath(),
   
   /** 用户数据目录 */
   userDataDir: process.env.LIEPIN_USER_DATA_DIR || join(process.env.HOME || '', '.liepin-cli', 'user-data'),

@@ -9,6 +9,20 @@ function makeTempDir(prefix: string): string {
   return mkdtempSync(join(tmpdir(), `liepin-${prefix}-`));
 }
 
+async function withSkillTarget<T>(targetDir: string, fn: () => Promise<T>): Promise<T> {
+  const originalTargetDir = process.env.LIEPIN_SKILL_TARGET_DIR;
+  process.env.LIEPIN_SKILL_TARGET_DIR = targetDir;
+  try {
+    return await fn();
+  } finally {
+    if (originalTargetDir === undefined) {
+      delete process.env.LIEPIN_SKILL_TARGET_DIR;
+    } else {
+      process.env.LIEPIN_SKILL_TARGET_DIR = originalTargetDir;
+    }
+  }
+}
+
 test('copySkill: 复制所有文件到目标目录', async () => {
   const src = makeTempDir('skill-src');
   const dst = makeTempDir('skill-dst');
@@ -74,16 +88,33 @@ test('copySkill: 子目录不递归（只复制顶层文件）', async () => {
 });
 
 test('installSkill: 默认 action=install 复制源 skill 目录', async () => {
-  const result = await installSkill(null, {});
-  assert.equal(result.success, true);
-  assert.ok(result.files_copied >= 1, '源 skill 目录至少包含 SKILL.md');
-  assert.ok(result.source.endsWith('skills/liepin-cli'));
-  assert.match(result.message, /Skill 已安装到/);
+  const target = makeTempDir('skill-install');
+  try {
+    await withSkillTarget(target, async () => {
+      const result = await installSkill(null, {});
+      assert.equal(result.success, true);
+      assert.ok(result.files_copied >= 1, '源 skill 目录至少包含 SKILL.md');
+      assert.ok(result.source.endsWith('skills/liepin-cli'));
+      assert.equal(result.target, target);
+      assert.ok(existsSync(join(target, 'SKILL.md')));
+      assert.match(result.message, /Skill 已安装到/);
+    });
+  } finally {
+    rmSync(target, { recursive: true, force: true });
+  }
 });
 
 test('installSkill: 显式 action=install 等同默认', async () => {
-  const result = await installSkill(null, { action: 'install' });
-  assert.equal(result.success, true);
+  const target = makeTempDir('skill-install');
+  try {
+    await withSkillTarget(target, async () => {
+      const result = await installSkill(null, { action: 'install' });
+      assert.equal(result.success, true);
+      assert.equal(result.target, target);
+    });
+  } finally {
+    rmSync(target, { recursive: true, force: true });
+  }
 });
 
 test('installSkill: 不支持的子命令抛错', async () => {

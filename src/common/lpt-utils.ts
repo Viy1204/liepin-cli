@@ -4,14 +4,16 @@
 
 import { Page } from 'puppeteer-core';
 import { sleep } from './utils.js';
+import { randomUUID } from 'crypto';
 
 export const LIEPIN_LPT_API = 'https://api-lpt.liepin.com';
 
 /** LPT API 请求 */
 export async function lptFetch(page: Page, url: string, opts: { body?: string; clientId?: string } = {}): Promise<any> {
   const { body = null, clientId = '40156' } = opts;
+  const traceId = randomUUID();
   
-  const result = await page.evaluate(async (fetchUrl: string, fetchBody: string | null, fetchClientId: string) => {
+  const result = await page.evaluate(async (fetchUrl: string, fetchBody: string | null, fetchClientId: string, fetchTraceId: string) => {
     try {
       const xsrf = document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith('XSRF-TOKEN='));
       const token = xsrf ? xsrf.split('=').slice(1).join('') : '';
@@ -24,6 +26,9 @@ export async function lptFetch(page: Page, url: string, opts: { body?: string; c
         'x-xsrf-token': token,
         'x-fscp-version': '1.1',
         'x-fscp-std-info': `{"client_id": "${fetchClientId}"}`,
+        'x-fscp-fe-version': '',
+        'x-fscp-trace-id': fetchTraceId,
+        'x-fscp-bi-stat': JSON.stringify({ location: window.location.href }),
       };
 
       const resp = await fetch(fetchUrl, {
@@ -38,7 +43,7 @@ export async function lptFetch(page: Page, url: string, opts: { body?: string; c
     } catch (e: any) {
       return { ok: false, status: 0, text: '', error: String(e?.message || e) };
     }
-  }, url, body, clientId);
+  }, url, body, clientId, traceId);
   
   const res = result as any;
   

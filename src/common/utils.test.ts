@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import type { Page } from 'puppeteer-core';
 import {
-  resolveCity, resolveCode, resolveSalary,
+  resolveCity, resolveCode, resolveSalary, requirePage,
   CITY_CODES, WORKYEAR_CODES, DEGREE_CODES, INDUSTRY_CODES,
   COMPSIZE_CODES, JOBKIND_CODES, SALARY_CODES, YEARSALARY_CODES,
 } from '../common/utils.js';
@@ -82,4 +83,13 @@ test('INDUSTRY_CODES: 包含核心行业', () => {
   assert.ok('互联网' in INDUSTRY_CODES);
   assert.ok('金融' in INDUSTRY_CODES);
   assert.ok('人工智能' in INDUSTRY_CODES);
+});
+
+test('requirePage: 抛错当 page 为 null', () => {
+  assert.throws(() => requirePage(null), /页面未初始化/);
+});
+
+test('requirePage: 通过当 page 存在 (类型守卫)', () => {
+  const fakePage = {} as Page;
+  assert.doesNotThrow(() => requirePage(fakePage));
 });

@@ -5,7 +5,7 @@
 [![license](https://img.shields.io/github/license/viy/liepin-cli)](./LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/viy/liepin-cli)](https://github.com/viy/liepin-cli)
 
-**liepin-cli**（`@viy/liepin-cli`）是开源的 **猎聘自动化命令行工具**。基于 Puppeteer / CDP 协议驱动本机 Chrome，无需 Selenium，把猎聘的核心 HR 操作搬进终端：**职位搜索**、**候选人管理**、**批量发消息**、**自动打招呼**、**简历预览**、**人才库管理**。
+**liepin-cli**（`@viy/liepin-cli`）是开源的 **猎聘自动化命令行工具**。基于 Puppeteer / CDP 协议驱动本机 Chrome，无需 Selenium，把猎聘的核心 HR 操作搬进终端：**人才搜索**、**候选人管理**、**批量发消息**、**自动打招呼**、**简历预览**、**人才库管理**。
 
 适合 HR 日常提效，也适合 Claude / GPT / Gemini 等 **AI Agent** 通过子进程调用，搭建全自动化招聘流水线。
 
@@ -22,7 +22,7 @@ liepin help
 
 | 场景 | 命令 |
 | --- | --- |
-| 猎聘职位搜索 | `liepin search 前端工程师` |
+| 猎聘人才搜索 | `liepin search 前端工程师` |
 | 猎聘自动打招呼 | `liepin greet <人才ID>` |
 | 猎聘候选人筛选 | `liepin recommend` / `liepin talent` |
 | 猎聘脚本自动化 | 本机 Chrome + CDP，Cookie 本地存储 |
@@ -65,7 +65,7 @@ npm install && npm run build
 
 | 命令 | 说明 |
 | --- | --- |
-| `liepin search <关键词>` | 搜索职位 |
+| `liepin search <关键词>` | 搜索人才 |
 | `liepin detail <职位ID>` | 查看职位详情 |
 | `liepin company <公司ID>` | 查看公司信息 |
 | `liepin chatlist` | 查看聊天列表 |
@@ -86,7 +86,7 @@ npm install && npm run build
 # 1. 登录（首次使用会打开浏览器）
 liepin search 前端工程师
 
-# 2. 搜索职位
+# 2. 搜索人才
 liepin search 前端工程师 --city 北京 --experience 3-5年
 
 # 3. 查看职位详情
@@ -118,7 +118,7 @@ echo "$result" | jq '.[0].title'
 liepin skill install
 
 # 在 Claude Code 中使用
-> 使用 liepin-cli 搜索前端工程师职位
+> 使用 liepin-cli 搜索前端工程师候选人
 > 使用 liepin-cli 向候选人打招呼
 ```
 
@@ -128,7 +128,7 @@ liepin skill install
 
 | 变量名 | 说明 | 默认值 |
 |--------|------|--------|
-| `CHROME_PATH` | Chrome/Edge 可执行文件路径 | - |
+| `CHROME_PATH` | Chrome/Edge 可执行文件路径；macOS 常见安装路径会自动检测 | - |
 | `LIEPIN_USER_DATA_DIR` | 用户数据目录 | `~/.liepin-cli/user-data` |
 | `LIEPIN_SCREENSHOT_DIR` | 截图目录 | `~/.liepin-cli/screenshots` |
 | `LIEPIN_HEADLESS` | 是否无头模式 | `false` |

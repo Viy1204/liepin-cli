@@ -4,10 +4,16 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { mkdtempSync, rmSync } from 'fs';
+import { tmpdir } from 'os';
 
 const exec = promisify(execFile);
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CLI = join(__dirname, 'index.js');
+
+function makeSkillTarget(): string {
+  return mkdtempSync(join(tmpdir(), 'liepin-cli-skill-'));
+}
 
 test('无参数: 显示 help，列出所有命令', async () => {
   const { stdout } = await exec('node', [CLI]);
@@ -41,18 +47,33 @@ test('未知命令: 报错并退出码 1', async () => {
 });
 
 test('skill --json: 输出有效 JSON', async () => {
-  const { stdout } = await exec('node', [CLI, 'skill', '--json']);
-  const data = JSON.parse(stdout);
-  assert.equal(data.success, true);
-  assert.ok(data.files_copied >= 1);
-  assert.ok(data.target.endsWith('/.claude/skills/liepin-cli'));
+  const target = makeSkillTarget();
+  try {
+    const { stdout } = await exec('node', [CLI, 'skill', '--json'], {
+      env: { ...process.env, LIEPIN_SKILL_TARGET_DIR: target },
+    });
+    const data = JSON.parse(stdout);
+    assert.equal(data.success, true);
+    assert.ok(data.files_copied >= 1);
+    assert.equal(data.target, target);
+  } finally {
+    rmSync(target, { recursive: true, force: true });
+  }
 });
 
 test('skill (默认 text 模式): 包含关键字段', async () => {
-  const { stdout } = await exec('node', [CLI, 'skill']);
-  assert.match(stdout, /success: true/);
-  assert.match(stdout, /files_copied: \d+/);
-  assert.match(stdout, /Skill 已安装到/);
+  const target = makeSkillTarget();
+  try {
+    const { stdout } = await exec('node', [CLI, 'skill'], {
+      env: { ...process.env, LIEPIN_SKILL_TARGET_DIR: target },
+    });
+    assert.match(stdout, /success: true/);
+    assert.match(stdout, /files_copied: \d+/);
+    assert.match(stdout, /Skill 已安装到/);
+    assert.match(stdout, new RegExp(target.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  } finally {
+    rmSync(target, { recursive: true, force: true });
+  }
 });
 
 test('-h 等价于 --help', async () => {

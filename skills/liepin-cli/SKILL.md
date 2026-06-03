@@ -2,7 +2,7 @@
 name: liepin-cli
 description: >-
   猎聘自动化 CLI 工具。当用户提到猎聘、liepin、招聘自动化、候选人管理、
-  职位搜索、自动打招呼等功能时，使用此 skill。
+  人才搜索、自动打招呼等功能时，使用此 skill。
 ---
 
 # 猎聘 CLI (`liepin-cli`)
@@ -10,7 +10,7 @@ description: >-
 ## 功能概述
 
 liepin-cli 是猎聘自动化命令行工具，支持：
-- 职位搜索和筛选
+- 人才搜索和筛选
 - 候选人管理
 - 自动打招呼
 - 聊天消息管理
@@ -20,63 +20,60 @@ liepin-cli 是猎聘自动化命令行工具，支持：
 
 - Node.js ≥ 20
 - Chrome/Edge 浏览器
-- 设置环境变量：
-  ```bash
-  export CHROME_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-  ```
+- macOS 常见 Chrome/Edge 安装路径会自动检测；找不到浏览器时再设置 `CHROME_PATH`
 
 ## 常用命令
 
 ### 登录
 ```bash
 # 首次使用需要登录
-CHROME_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" node /tmp/liepin-cli/dist/cli/index.js login
+node /tmp/liepin-cli/dist/cli/index.js login
 ```
 
-### 搜索职位
+### 搜索人才
 ```bash
 # 基础搜索
-CHROME_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" node /tmp/liepin-cli/dist/cli/index.js search 前端工程师
+node /tmp/liepin-cli/dist/cli/index.js search 前端工程师
 
 # 带筛选条件
-CHROME_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" node /tmp/liepin-cli/dist/cli/index.js search 前端工程师 --city 北京 --experience 3-5年 --salary 20-30K
+node /tmp/liepin-cli/dist/cli/index.js search 前端工程师 --city 北京 --experience 3-5年 --salary 20-30K
 ```
 
 ### 查看详情
 ```bash
 # 职位详情
-CHROME_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" node /tmp/liepin-cli/dist/cli/index.js detail <职位ID>
+node /tmp/liepin-cli/dist/cli/index.js detail <职位ID>
 
 # 公司信息
-CHROME_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" node /tmp/liepin-cli/dist/cli/index.js company <公司ID>
+node /tmp/liepin-cli/dist/cli/index.js company <公司ID>
 ```
 
 ### 候选人管理
 ```bash
 # 查看推荐候选人
-CHROME_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" node /tmp/liepin-cli/dist/cli/index.js recommend
+node /tmp/liepin-cli/dist/cli/index.js recommend
 
 # 查看人才库
-CHROME_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" node /tmp/liepin-cli/dist/cli/index.js talent
+node /tmp/liepin-cli/dist/cli/index.js talent
 
 # 向候选人打招呼
-CHROME_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" node /tmp/liepin-cli/dist/cli/index.js greet <人才ID>
+node /tmp/liepin-cli/dist/cli/index.js greet <人才ID>
 ```
 
 ### 聊天管理
 ```bash
 # 查看聊天列表
-CHROME_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" node /tmp/liepin-cli/dist/cli/index.js chatlist
+node /tmp/liepin-cli/dist/cli/index.js chatlist
 
 # 查看聊天消息
-CHROME_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" node /tmp/liepin-cli/dist/cli/index.js chatmsg <聊天ID>
+node /tmp/liepin-cli/dist/cli/index.js chatmsg <聊天ID>
 ```
 
 ## 命令参数
 
 | 命令 | 参数 | 说明 |
 |------|------|------|
-| `search` | `query` | 搜索关键词（必需） |
+| `search` | `query` | 人才搜索关键词（必需） |
 | | `--city` | 城市（如：北京、上海） |
 | | `--experience` | 工作经验（如：3-5年） |
 | | `--salary` | 薪资范围（如：20-30K） |
@@ -92,7 +89,7 @@ CHROME_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" node 
 
 ## 故障排除
 
-### Chrome 未找到
+### Chrome 未找到（自动检测失败时）
 ```bash
 export CHROME_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 ```
@@ -115,7 +112,7 @@ export CHROME_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome
 
 - `liepin help` - 显示帮助信息
 - `liepin login` - 登录猎聘账号
-- `liepin search` - 搜索职位
+- `liepin search` - 搜索人才
 - `liepin detail` - 查看职位详情
 - `liepin company` - 查看公司信息
 - `liepin chatlist` - 查看聊天列表

@@ -15,6 +15,9 @@ const SKILL_NAME = 'liepin-cli';
 const SKILL_SOURCE_DIR = join(__dirname, '..', '..', 'skills', 'liepin-cli');
 
 function getTargetDir(): string {
+  if (process.env.LIEPIN_SKILL_TARGET_DIR) {
+    return process.env.LIEPIN_SKILL_TARGET_DIR;
+  }
   return join(homedir(), '.claude', 'skills', SKILL_NAME);
 }
 

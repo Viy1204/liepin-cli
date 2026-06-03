@@ -2,7 +2,7 @@
 
 ## 项目概述
 
-liepin-cli 是猎聘自动化 CLI 工具，基于 Puppeteer/CDP 驱动本机 Chrome，支持批量发消息、自动打招呼、候选人管理、职位搜索等功能。
+liepin-cli 是猎聘自动化 CLI 工具，基于 Puppeteer/CDP 驱动本机 Chrome，支持批量发消息、自动打招呼、候选人管理、人才搜索等功能。
 
 ## 核心原则
 
@@ -80,7 +80,7 @@ await page.evaluate(() => {
 
 | 变量名 | 说明 | 默认值 |
 |--------|------|--------|
-| `CHROME_PATH` | Chrome/Edge 可执行文件路径 | - |
+| `CHROME_PATH` | Chrome/Edge 可执行文件路径；macOS 常见安装路径会自动检测 | - |
 | `PUPPETEER_EXECUTABLE_PATH` | Puppeteer 可执行文件路径 | - |
 | `LIEPIN_USER_DATA_DIR` | 用户数据目录 | `~/.liepin-cli/user-data` |
 | `LIEPIN_SCREENSHOT_DIR` | 截图目录 | `~/.liepin-cli/screenshots` |
@@ -93,7 +93,7 @@ await page.evaluate(() => {
 
 | 命令 | 说明 |
 |------|------|
-| `search` | 搜索职位 |
+| `search` | 搜索人才 |
 | `detail` | 查看职位详情 |
 | `company` | 查看公司信息 |
 | `chatlist` | 查看聊天列表 |

@@ -94,7 +94,25 @@ export class CdpBrowser {
   /** 关闭浏览器 */
   async close(): Promise<void> {
     if (this.browser) {
-      await this.browser.close();
+      const browser = this.browser;
+      const browserProcess = browser.process();
+      let timeout: NodeJS.Timeout | null = null;
+      try {
+        timeout = setTimeout(() => {
+          try {
+            browser.disconnect();
+          } catch (_) {}
+          browserProcess?.kill('SIGKILL');
+        }, 3000);
+        await browser.close();
+      } catch {
+        try {
+          browser.disconnect();
+        } catch (_) {}
+        browserProcess?.kill('SIGKILL');
+      } finally {
+        if (timeout) clearTimeout(timeout);
+      }
       this.browser = null;
       this.page = null;
     }
