@@ -1,13 +1,13 @@
-# liepin-cli — 猎聘自动化 CLI | 批量发消息 · 自动打招呼 · AI Agent 招聘工具
+# liepin-cli — 猎聘招聘者端自动化 CLI | 人才搜索 · 简历查看 · AI Agent 招聘工具
 
 [![npm version](https://img.shields.io/npm/v/@viyzhu/liepin-cli)](https://www.npmjs.com/package/@viyzhu/liepin-cli)
 [![npm downloads](https://img.shields.io/npm/dm/@viyzhu/liepin-cli)](https://www.npmjs.com/package/@viyzhu/liepin-cli)
 [![license](https://img.shields.io/github/license/Viy1204/liepin-cli)](./LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/Viy1204/liepin-cli)](https://github.com/Viy1204/liepin-cli)
 
-**liepin-cli**（`@viyzhu/liepin-cli`）是开源的 **猎聘自动化命令行工具**。基于 Puppeteer / CDP 协议驱动本机 Chrome，无需 Selenium，把猎聘的核心 HR 操作搬进终端：**人才搜索**、**候选人管理**、**打招呼 / 发消息**、**简历预览**、**人才库管理**。
+**liepin-cli**（`@viyzhu/liepin-cli`）是开源的 **猎聘招聘者端（lpt.liepin.com）自动化命令行工具**。基于 Puppeteer / CDP 协议驱动本机 Chrome，无需 Selenium，把招聘者端的核心操作搬进终端：**人才搜索**、**简历查看**、**推荐 / 投递候选人管理**、**聊天记录查看**、**职位管理**。
 
-每条命令都是单步原子操作，输出结构化文本；批量发消息等多步流程由调用方（脚本或 Claude / GPT / Gemini 等 **AI Agent**）循环编排，搭建全自动化招聘流水线。
+每条命令都是单步原子操作，输出结构化文本；批量筛选、多步流程由调用方（脚本或 Claude / GPT / Gemini 等 **AI Agent**）循环编排，搭建半自动化招聘流水线。
 
 ```bash
 npm install -g @viyzhu/liepin-cli@latest
@@ -84,8 +84,8 @@ npm install && npm run build
 ## 快速上手
 
 ```bash
-# 1. 登录（首次使用会打开浏览器）
-liepin search 前端工程师
+# 1. 登录招聘者端（弹出浏览器扫码，cookie 本地持久化）
+liepin login
 
 # 2. 搜索人才
 liepin search 前端工程师 --city 北京 --experience 3-5年
@@ -121,7 +121,7 @@ liepin skill install
 
 # 在 Claude Code 中使用
 > 使用 liepin-cli 搜索前端工程师候选人
-> 使用 liepin-cli 向候选人打招呼
+> 用 liepin-cli 看看排第一的候选人简历
 ```
 
 ---
@@ -130,7 +130,7 @@ liepin skill install
 
 | 变量名 | 说明 | 默认值 |
 |--------|------|--------|
-| `CHROME_PATH` | Chrome/Edge 可执行文件路径；macOS 常见安装路径会自动检测 | - |
+| `CHROME_PATH` | Chrome/Edge 可执行文件路径；Windows / macOS / Linux 常见安装路径会自动检测 | - |
 | `LIEPIN_USER_DATA_DIR` | 用户数据目录 | `~/.liepin-cli/user-data` |
 | `LIEPIN_SCREENSHOT_DIR` | 截图目录 | `~/.liepin-cli/screenshots` |
 | `LIEPIN_HEADLESS` | 是否无头模式 | `false` |
@@ -141,17 +141,22 @@ liepin skill install
 
 ## 常见问题
 
-### Chrome 未找到
+### Chrome 未找到（自动探测失败时手动指定）
 
 ```bash
+# macOS
 export CHROME_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+# Linux
+export CHROME_PATH="/usr/bin/google-chrome"
+# Windows (PowerShell)
+$env:CHROME_PATH="C:\Program Files\Google\Chrome\Application\chrome.exe"
 ```
 
-### 登录失败
+### 登录失败 / 登录态失效
 
-1. 先手动登录猎聘网站
-2. 确保 `LIEPIN_USER_DATA_DIR` 目录正确
-3. 检查 Cookie 是否过期
+1. 重新跑 `liepin login`，在弹出的浏览器里扫码登录招聘者端
+2. 确认 `LIEPIN_USER_DATA_DIR` 目录正确（cookie 持久化在此）
+3. 命令报“返回了 HTML / 反爬挑战”多为登录态过期，重新 `liepin login` 即可
 
 ### 被检测为自动化
 
@@ -159,6 +164,17 @@ export CHROME_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome
 2. 检查 User-Agent
 3. 使用代理
 4. 减少操作频率
+
+---
+
+## 开发
+
+```bash
+npm install
+npm run build && npm test
+```
+
+发版：在 `main` 上 `npm version patch`（自动 bump + 打 tag）后 `git push --tags`，GitHub Actions 经 **npm Trusted Publishing (OIDC)** 自动发布，无需 npm token（见 `.github/workflows/publish.yml`）。
 
 ---
 
