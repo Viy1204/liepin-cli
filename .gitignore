@@ -19,6 +19,9 @@ Thumbs.db
 .env.local
 .env.*.local
 
+# npm 凭证（防止误提交 token）
+.npmrc
+
 # User data
 .liepin-cli/
 
