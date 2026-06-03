@@ -33,6 +33,25 @@ const OUTPUT_DIR = join(homedir(), '.liepin-cli', 'captures');
 mkdirSync(USER_DATA_DIR, { recursive: true });
 mkdirSync(OUTPUT_DIR, { recursive: true });
 
+/** 业务接口关键词：覆盖所有命令，不只 search */
+const BIZ_RE = /search|jobcard|pc-search|recommend|talent|resume|company|chat|im|contact|greet|apply|jobmanage|job\b/i;
+const LATEST_FILE = join(OUTPUT_DIR, 'latest-capture.json');
+
+/** 落盘（SIGINT 最终版 + tick 增量版共用） */
+function dump(file) {
+  const all = Array.from(captures.values());
+  const bizLike = all.filter(c => BIZ_RE.test(c.url) || (c.postData && BIZ_RE.test(c.postData)));
+  writeFileSync(file, JSON.stringify({
+    capturedAt: new Date().toISOString(),
+    userDataDir: USER_DATA_DIR,
+    totalRequests: all.length,
+    searchRelated: bizLike.length,
+    all,
+    searchRelatedCalls: bizLike,
+  }, null, 2));
+  return { all, bizLike };
+}
+
 console.log('启动 Chrome...');
 console.log(`  user-data-dir: ${USER_DATA_DIR}`);
 
@@ -94,29 +113,15 @@ const onSigint = async () => {
   if (exiting) return;
   exiting = true;
   console.log('\n\n收到 SIGINT, 正在输出捕获数据 ...');
-  
-  // 分类
-  const all = Array.from(captures.values());
-  const searchLike = all.filter(c => 
-    /search|jobcard|pc-search|recommend/i.test(c.url) ||
-    (c.postData && /search|job/i.test(c.postData))
-  );
-  
+
   const outFile = join(OUTPUT_DIR, `search-capture-${Date.now()}.json`);
-  const out = {
-    capturedAt: new Date().toISOString(),
-    userDataDir: USER_DATA_DIR,
-    totalRequests: all.length,
-    searchRelated: searchLike.length,
-    all: all,
-    searchRelatedCalls: searchLike,
-  };
-  writeFileSync(outFile, JSON.stringify(out, null, 2));
-  
+  const { all, bizLike: searchLike } = dump(outFile);
+  dump(LATEST_FILE);
+
   console.log(`\n=== 共抓到 ${all.length} 个 XHR/Fetch 请求 ===`);
-  console.log(`=== 其中 ${searchLike.length} 个看起来跟搜索相关 ===\n`);
-  
-  // 控制台打印 search 相关的简要信息
+  console.log(`=== 其中 ${searchLike.length} 个看起来跟业务接口相关 ===\n`);
+
+  // 控制台打印业务相关的简要信息
   searchLike.forEach((c, i) => {
     console.log(`[${i + 1}] ${c.method} ${c.responseStatus} ${c.url}`);
   });
@@ -133,17 +138,15 @@ const onSigint = async () => {
 process.on('SIGINT', onSigint);
 process.on('SIGTERM', onSigint);
 
-// 持续运行, 每 10 秒打印一次统计, 提示用户操作
+// 持续运行, 每 3 秒增量落盘 latest-capture.json (不依赖 Ctrl+C, 随时可读)
 let tickCount = 0;
 const tick = setInterval(() => {
   tickCount++;
-  const all = Array.from(captures.values());
-  const search = all.filter(c => /search|jobcard|pc-search|recommend/i.test(c.url));
-  console.log(`[${new Date().toLocaleTimeString()}] 累计 ${all.length} 个请求 (${search.length} 个搜索相关). 还活着, 继续操作.`);
-  if (tickCount % 6 === 0) {
-    console.log('  -> 完成后按 Ctrl+C');
+  const { all, bizLike } = dump(LATEST_FILE);
+  if (tickCount % 4 === 0) {
+    console.log(`[${new Date().toLocaleTimeString()}] 累计 ${all.length} 个请求 (${bizLike.length} 个业务接口), 已增量写入 ${LATEST_FILE}`);
   }
-}, 10000);
+}, 3000);
 
 // 防止 node 退出
 process.stdin.resume();
