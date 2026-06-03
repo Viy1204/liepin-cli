@@ -190,89 +190,47 @@ export async function navigateTo(page: Page, path: string): Promise<void> {
   await sleepRandom();
 }
 
-/** 猎聘 API 请求 */
+/** 猎聘 API 请求 (api-c.liepin.com / 老 www.liepin.com 域)
+ *
+ * 与 lptFetch 行为对齐:
+ *   - try/catch, 不再裸抛 "Failed to fetch"
+ *   - 非 2xx 直接抛带状态码的错误
+ *   - 非 JSON 响应抛"可能是反爬虫挑战"
+ */
 export async function liepinFetch(page: Page, url: string, options: RequestInit = {}): Promise<any> {
-  const response = await page.evaluate(async (fetchUrl, fetchOptions) => {
-    const res = await fetch(fetchUrl, {
-      credentials: 'include',
-      ...fetchOptions,
-      headers: {
-        'Content-Type': 'application/json',
-        'x-xsrf-token': document.cookie.match(/XSRF-TOKEN=([^;]+)/)?.[1] || '',
-        ...fetchOptions.headers,
-      },
-    });
-    return res.json();
-  }, url, options);
-  return response;
+  const result = await page.evaluate(async (fetchUrl, fetchOptions) => {
+    try {
+      const res = await fetch(fetchUrl, {
+        credentials: 'include',
+        ...fetchOptions,
+        headers: {
+          'Content-Type': 'application/json',
+          'x-xsrf-token': document.cookie.match(/XSRF-TOKEN=([^;]+)/)?.[1] || '',
+          ...fetchOptions.headers,
+        },
+      });
+      const text = await res.text();
+      return { ok: res.ok, status: res.status, text };
+    } catch (e: any) {
+      return { ok: false, status: 0, text: '', error: String(e?.message || e) };
+    }
+  }, url, options) as any;
+
+  if (result.error) {
+    throw new Error(`猎聘请求失败 (${url}): ${result.error}`);
+  }
+  if (!result.ok) {
+    throw new Error(`猎聘 HTTP ${result.status} (${url}): ${result.text.slice(0, 200)}`);
+  }
+  if (result.text.trim().startsWith('<')) {
+    throw new Error(`猎聘返回了 HTML (${url})，可能是登录态失效或反爬虫挑战`);
+  }
+  try {
+    return JSON.parse(result.text);
+  } catch {
+    throw new Error(`猎聘 JSON 解析失败 (${url}): ${result.text.slice(0, 200)}`);
+  }
 }
-
-/** 构建搜索请求体 */
-export function buildSearchBody(query: string, options: {
-  city?: string;
-  workYear?: string;
-  salary?: string;
-  degree?: string;
-  industry?: string;
-  compScale?: string;
-  jobKind?: string;
-  page?: number;
-  pageSize?: number;
-} = {}): any {
-  const {
-    city = '',
-    workYear = '',
-    salary = '',
-    degree = '',
-    industry = '',
-    compScale = '',
-    jobKind = '',
-    page = 1,
-    pageSize = 20,
-  } = options;
-
-  return {
-    mainSearchPc: {
-      keyWord: query,
-      dq: city,
-      workYearCode: workYear,
-      salaryLow: salary.split('$')[0] || '',
-      salaryHigh: salary.split('$')[1] || '',
-      eduLevel: degree,
-      industryCode: industry,
-      compScale: compScale,
-      jobKind: jobKind,
-      currentPage: page,
-      pageSize,
-    },
-  };
-}
-
-/** 映射职位卡片 */
-export function mapJobCard(item: any): any {
-  return {
-    title: item.title || '',
-    company: item.compName || '',
-    salary: item.salary || '',
-    city: item.city || '',
-    experience: item.workYear || '',
-    education: item.eduLevel || '',
-    tags: item.tags || [],
-    url: item.detailUrl || '',
-    jobId: item.jobId || '',
-  };
-}
-
-/** 搜索结果列定义 */
-export const SEARCH_COLUMNS = [
-  { header: '职位', key: 'title', width: 30 },
-  { header: '公司', key: 'company', width: 20 },
-  { header: '薪资', key: 'salary', width: 15 },
-  { header: '城市', key: 'city', width: 10 },
-  { header: '经验', key: 'experience', width: 10 },
-  { header: '学历', key: 'education', width: 10 },
-  { header: '标签', key: 'tags', width: 30 },
-];
 
 /** 职位详情列定义 */
 export const JOB_DETAIL_COLUMNS = [
@@ -284,15 +242,6 @@ export const JOB_DETAIL_COLUMNS = [
 export const COMPANY_COLUMNS = [
   { header: '字段', key: 'field', width: 15 },
   { header: '内容', key: 'value', width: 80 },
-];
-
-/** 聊天列表列定义 */
-export const CHATLIST_COLUMNS = [
-  { header: '姓名', key: 'name', width: 15 },
-  { header: '职位', key: 'title', width: 25 },
-  { header: '公司', key: 'company', width: 20 },
-  { header: '最后消息', key: 'lastMessage', width: 30 },
-  { header: '时间', key: 'time', width: 15 },
 ];
 
 /** 推荐候选人列定义 */
