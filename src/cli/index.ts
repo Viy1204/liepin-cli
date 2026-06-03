@@ -78,7 +78,7 @@ ${commands.map(cmd => `  ${cmd.name.padEnd(15)} ${cmd.description}`).join('\n')}
 示例:
   liepin search 前端工程师
   liepin search 前端工程师 --city 北京 --experience 3-5年
-  liepin resume 84f775759a85Je7d1fe824294
+  liepin resume <简历ID>          # 简历ID 取自 search 结果的 resume_id
   liepin chatlist
   liepin recommend
 `);
