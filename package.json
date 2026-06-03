@@ -44,7 +44,6 @@
   "scripts": {
     "build": "tsc && chmod +x dist/cli/index.js",
     "dev": "npm run build && node dist/cli/index.js",
-    "deploy": "node scripts/deploy.mjs",
     "capture:search": "node scripts/capture-search.mjs",
     "analyze:capture": "node scripts/analyze-capture.mjs",
     "test": "node --test dist/**/*.test.js"

@@ -5,6 +5,7 @@
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { existsSync, readFileSync } from 'fs';
+import { homedir } from 'os';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -14,11 +15,31 @@ function resolveChromePath(): string {
     return process.env.CHROME_PATH || process.env.PUPPETEER_EXECUTABLE_PATH || '';
   }
 
-  const candidates = [
-    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-    '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
-    '/Applications/Chromium.app/Contents/MacOS/Chromium',
-  ];
+  const programFiles = process.env['PROGRAMFILES'] || 'C:\\Program Files';
+  const programFilesX86 = process.env['PROGRAMFILES(X86)'] || 'C:\\Program Files (x86)';
+  const localAppData = process.env['LOCALAPPDATA'] || join(homedir(), 'AppData', 'Local');
+
+  const candidates = process.platform === 'win32'
+    ? [
+        join(programFiles, 'Google\\Chrome\\Application\\chrome.exe'),
+        join(programFilesX86, 'Google\\Chrome\\Application\\chrome.exe'),
+        join(localAppData, 'Google\\Chrome\\Application\\chrome.exe'),
+        join(programFiles, 'Microsoft\\Edge\\Application\\msedge.exe'),
+        join(programFilesX86, 'Microsoft\\Edge\\Application\\msedge.exe'),
+      ]
+    : process.platform === 'darwin'
+      ? [
+          '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+          '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+          '/Applications/Chromium.app/Contents/MacOS/Chromium',
+        ]
+      : [
+          '/usr/bin/google-chrome',
+          '/usr/bin/google-chrome-stable',
+          '/usr/bin/chromium',
+          '/usr/bin/chromium-browser',
+          '/usr/bin/microsoft-edge',
+        ];
 
   return candidates.find(path => existsSync(path)) || '';
 }
@@ -29,13 +50,13 @@ export const DEFAULT_CONFIG = {
   chromePath: resolveChromePath(),
   
   /** 用户数据目录 */
-  userDataDir: process.env.LIEPIN_USER_DATA_DIR || join(process.env.HOME || '', '.liepin-cli', 'user-data'),
-  
+  userDataDir: process.env.LIEPIN_USER_DATA_DIR || join(homedir(), '.liepin-cli', 'user-data'),
+
   /** 截图目录 */
-  screenshotDir: process.env.LIEPIN_SCREENSHOT_DIR || join(process.env.HOME || '', '.liepin-cli', 'screenshots'),
-  
+  screenshotDir: process.env.LIEPIN_SCREENSHOT_DIR || join(homedir(), '.liepin-cli', 'screenshots'),
+
   /** 配置文件路径 */
-  configDir: process.env.LIEPIN_CONFIG_DIR || join(process.env.HOME || '', '.liepin-cli'),
+  configDir: process.env.LIEPIN_CONFIG_DIR || join(homedir(), '.liepin-cli'),
   
   /** 浏览器视口 */
   viewport: {
