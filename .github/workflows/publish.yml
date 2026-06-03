@@ -1,0 +1,29 @@
+name: publish
+
+# 打 v* tag 时自动发布到 npm。
+# 认证用 npm Trusted Publishing (OIDC)，无需 NPM_TOKEN：
+# 需先在 npmjs.com 包设置里把本仓库 + 本 workflow 文件名配为 Trusted Publisher。
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # OIDC 发布所需
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+      # Trusted Publishing 需要较新的 npm CLI
+      - run: npm install -g npm@latest
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+      - run: npm publish
