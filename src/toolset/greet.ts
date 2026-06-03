@@ -1,5 +1,10 @@
 /**
  * 猎聘打招呼命令
+ *
+ * ⚠️ 未经真机验证：本命令仍走老 C 端端点 api-c.liepin.com/...pc-greet-talent，
+ * 而招聘者端实测已全面迁移到 api-lpt.liepin.com（参见 search/recommend/chatmsg）。
+ * 该端点极可能已失效（返回 HTML 反爬挑战或 404）。修复需抓一次真实"打招呼"请求，
+ * 换成对应的 LPT IM 发送接口后再启用。在此之前请勿依赖本命令。
  */
 
 import { Page } from 'puppeteer-core';
@@ -52,7 +57,7 @@ export async function greet(page: Page, options: GreetOptions): Promise<any> {
 /** 打招呼命令定义 */
 export const greetCommand = {
   name: 'greet',
-  description: '向候选人打招呼',
+  description: '向候选人打招呼（⚠️ 未验证，端点可能已失效）',
   args: [
     { name: 'talentId', type: 'string', required: true, positional: true, help: '人才 ID' },
     { name: 'message', type: 'string', default: '', help: '打招呼消息' },

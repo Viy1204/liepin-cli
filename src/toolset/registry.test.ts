@@ -2,8 +2,6 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { loginCommand } from './login.js';
 import { searchCommand } from './search.js';
-import { detailCommand } from './detail.js';
-import { companyCommand } from './company.js';
 import { chatlistCommand } from './chatlist.js';
 import { chatmsgCommand } from './chatmsg.js';
 import { recommendCommand } from './recommend.js';
@@ -32,7 +30,7 @@ interface CommandShape {
 }
 
 const allCommands: CommandShape[] = [
-  loginCommand, searchCommand, detailCommand, companyCommand,
+  loginCommand, searchCommand,
   chatlistCommand, chatmsgCommand, recommendCommand, talentCommand,
   resumeCommand, greetCommand, joblistCommand, skillCommand,
 ];
@@ -74,8 +72,8 @@ test('其它命令 requiresPage 默认为 true（即 undefined 或 true）', () 
   }
 });
 
-test('至少注册 12 个命令（防止删命令时漏更新测试）', () => {
-  assert.ok(allCommands.length >= 12, `只有 ${allCommands.length} 个命令`);
+test('至少注册 10 个命令（防止删命令时漏更新测试）', () => {
+  assert.ok(allCommands.length >= 10, `只有 ${allCommands.length} 个命令`);
 });
 
 test('每个命令至少有一行 columns', () => {

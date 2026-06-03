@@ -59,7 +59,7 @@ export async function joblist(page: Page, options: JoblistOptions): Promise<any[
     throw new Error('获取职位列表失败: 响应格式异常 (无 ejobList)');
   }
 
-  return jobs.map((item: any) => {
+  const mapped = jobs.map((item: any) => {
     const code = String(item.ejobStatusCode || item.ejobStatus || '');
     const newCnt = item.ejobNewApplyCnt;
     const totalCnt = item.ejobTotalApplyCnt;
@@ -82,6 +82,9 @@ export async function joblist(page: Page, options: JoblistOptions): Promise<any[
       connects: String(item.connectNumber ?? ''),
     };
   });
+
+  // status 过滤在客户端做：LPT 列表接口不接受状态入参，按状态中文名筛选返回结果
+  return status ? mapped.filter(job => job.status === status) : mapped;
 }
 
 /** 职位列表命令定义 */
@@ -99,7 +102,6 @@ export const joblistCommand = {
     { header: '城市', key: 'city', width: 12 },
     { header: '状态', key: 'status', width: 10 },
     { header: '刷新时间', key: 'publishTime', width: 15 },
-    { header: '招聘中', key: 'recruitCnt', width: 8 },
     { header: '新/总投递', key: 'apply_summary', width: 12 },
     { header: '沟通数', key: 'connects', width: 8 },
   ],
