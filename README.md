@@ -2,12 +2,12 @@
 
 [![npm version](https://img.shields.io/npm/v/@viy/liepin-cli)](https://www.npmjs.com/package/@viy/liepin-cli)
 [![npm downloads](https://img.shields.io/npm/dm/@viy/liepin-cli)](https://www.npmjs.com/package/@viy/liepin-cli)
-[![license](https://img.shields.io/github/license/viy/liepin-cli)](./LICENSE)
-[![GitHub stars](https://img.shields.io/github/stars/viy/liepin-cli)](https://github.com/viy/liepin-cli)
+[![license](https://img.shields.io/github/license/Viy1204/liepin-cli)](./LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/Viy1204/liepin-cli)](https://github.com/Viy1204/liepin-cli)
 
-**liepin-cli**（`@viy/liepin-cli`）是开源的 **猎聘自动化命令行工具**。基于 Puppeteer / CDP 协议驱动本机 Chrome，无需 Selenium，把猎聘的核心 HR 操作搬进终端：**人才搜索**、**候选人管理**、**批量发消息**、**自动打招呼**、**简历预览**、**人才库管理**。
+**liepin-cli**（`@viy/liepin-cli`）是开源的 **猎聘自动化命令行工具**。基于 Puppeteer / CDP 协议驱动本机 Chrome，无需 Selenium，把猎聘的核心 HR 操作搬进终端：**人才搜索**、**候选人管理**、**打招呼 / 发消息**、**简历预览**、**人才库管理**。
 
-适合 HR 日常提效，也适合 Claude / GPT / Gemini 等 **AI Agent** 通过子进程调用，搭建全自动化招聘流水线。
+每条命令都是单步原子操作，输出结构化文本；批量发消息等多步流程由调用方（脚本或 Claude / GPT / Gemini 等 **AI Agent**）循环编排，搭建全自动化招聘流水线。
 
 ```bash
 npm install -g @viy/liepin-cli@latest
@@ -23,7 +23,7 @@ liepin help
 | 场景 | 命令 |
 | --- | --- |
 | 猎聘人才搜索 | `liepin search 前端工程师` |
-| 猎聘自动打招呼 | `liepin greet <人才ID>` |
+| 猎聘简历预览 | `liepin resume <简历ID>` |
 | 猎聘候选人筛选 | `liepin recommend` / `liepin talent` |
 | 猎聘脚本自动化 | 本机 Chrome + CDP，Cookie 本地存储 |
 | AI 招聘 Agent | 子进程调用，输出 Agent 友好 |
@@ -50,11 +50,14 @@ liepin help
 > ```
 >
 > 使用 `fnm` / `nvm` / `volta` 的用户可跳过此步。Windows 用户无需此步。
+>
+> **Windows / Linux 找不到 Chrome**：自动探测覆盖 Chrome / Edge 的常见安装路径，
+> 若未命中请手动设置 `CHROME_PATH`（见下方「环境变量」）。
 
 ### 从源码构建
 
 ```bash
-git clone https://github.com/viy/liepin-cli.git
+git clone https://github.com/Viy1204/liepin-cli.git
 cd liepin-cli
 npm install && npm run build
 ```
@@ -66,14 +69,12 @@ npm install && npm run build
 | 命令 | 说明 |
 | --- | --- |
 | `liepin search <关键词>` | 搜索人才 |
-| `liepin detail <职位ID>` | 查看职位详情 |
-| `liepin company <公司ID>` | 查看公司信息 |
 | `liepin chatlist` | 查看聊天列表 |
-| `liepin chatmsg <聊天ID>` | 查看聊天消息 |
+| `liepin chatmsg <对方imId>` | 查看与某候选人的聊天记录 |
 | `liepin recommend` | 查看推荐候选人 |
 | `liepin talent` | 查看人才库 |
-| `liepin resume <人才ID>` | 查看简历详情 |
-| `liepin greet <人才ID>` | 向候选人打招呼 |
+| `liepin resume <简历ID>` | 查看简历详情（传 search 返回的 resume_id） |
+| `liepin greet <人才ID>` | 向候选人打招呼（⚠️ 未验证，端点可能已失效） |
 | `liepin joblist` | 查看职位列表 |
 
 完整用法：`liepin help`
@@ -89,14 +90,15 @@ liepin search 前端工程师
 # 2. 搜索人才
 liepin search 前端工程师 --city 北京 --experience 3-5年
 
-# 3. 查看职位详情
-liepin detail 123456
+# 3. 查看某候选人简历（resume_id 来自 search 结果）
+liepin resume <简历ID>
 
 # 4. 查看推荐候选人
 liepin recommend
 
-# 5. 向候选人打招呼
-liepin greet 789012
+# 5. 查看聊天列表 / 某会话记录（im_id 来自 chatlist）
+liepin chatlist
+liepin chatmsg <对方imId>
 ```
 
 ---

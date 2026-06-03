@@ -59,22 +59,18 @@ await page.goto(url); // 没有等待
 
 ### Puppeteer evaluate 约束
 
-- **必须使用字符串脚本** - 避免构建产物中的 `__name is not defined` 错误
-- **不要使用箭头函数** - 使用普通函数声明
+本项目用 `tsc`（非 esbuild）编译，函数回调形式的 `page.evaluate` 不会触发
+`__name is not defined`，因此直接传函数即可，参数通过 `evaluate` 的后续实参注入。
 
 ```typescript
-// 好的 evaluate
-await page.evaluate(`
-  (function() {
-    // 代码
-  })()
-`);
-
-// 不好的 evaluate
-await page.evaluate(() => {
-  // 代码
-});
+// 当前用法：函数回调 + 实参注入（见 common/utils.ts、common/lpt-utils.ts）
+await page.evaluate(async (url, body) => {
+  const res = await fetch(url, { method: 'POST', body });
+  return await res.text();
+}, fetchUrl, fetchBody);
 ```
+
+> 注意：回调体在浏览器上下文执行，不能引用 Node 侧的闭包变量，所有数据必须经实参传入。
 
 ## 环境变量
 
@@ -94,14 +90,12 @@ await page.evaluate(() => {
 | 命令 | 说明 |
 |------|------|
 | `search` | 搜索人才 |
-| `detail` | 查看职位详情 |
-| `company` | 查看公司信息 |
 | `chatlist` | 查看聊天列表 |
-| `chatmsg` | 查看聊天消息 |
+| `chatmsg` | 查看与某候选人的聊天记录（入参为对方 imId） |
 | `recommend` | 查看推荐候选人 |
 | `talent` | 查看人才库 |
-| `resume` | 查看简历详情 |
-| `greet` | 向候选人打招呼 |
+| `resume` | 查看简历详情（入参为 resume_id） |
+| `greet` | 向候选人打招呼（⚠️ 未验证，端点可能已失效） |
 | `joblist` | 查看职位列表 |
 
 ## 反检测策略
