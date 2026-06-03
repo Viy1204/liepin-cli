@@ -34,6 +34,9 @@
   "bin": {
     "liepin": "dist/cli/index.js"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "files": [
     "dist",
     "!dist/**/*.test.*",
