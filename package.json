@@ -36,6 +36,7 @@
   },
   "files": [
     "dist",
+    "!dist/**/*.test.*",
     "skills",
     "README.md",
     "AGENTS.md",
