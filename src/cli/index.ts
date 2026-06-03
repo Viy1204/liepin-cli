@@ -7,8 +7,6 @@ import { config } from '../config.js';
 import { CdpBrowser } from '../browser/cdp_browser.js';
 import { loginCommand } from '../toolset/login.js';
 import { searchCommand } from '../toolset/search.js';
-import { detailCommand } from '../toolset/detail.js';
-import { companyCommand } from '../toolset/company.js';
 import { chatlistCommand } from '../toolset/chatlist.js';
 import { chatmsgCommand } from '../toolset/chatmsg.js';
 import { recommendCommand } from '../toolset/recommend.js';
@@ -43,8 +41,6 @@ interface Command {
 const commands: Command[] = [
   loginCommand,
   searchCommand,
-  detailCommand,
-  companyCommand,
   chatlistCommand,
   chatmsgCommand,
   recommendCommand,
@@ -74,11 +70,9 @@ ${commands.map(cmd => `  ${cmd.name.padEnd(15)} ${cmd.description}`).join('\n')}
 示例:
   liepin search 前端工程师
   liepin search 前端工程师 --city 北京 --experience 3-5年
-  liepin detail 123456
-  liepin company 789012
+  liepin resume 84f775759a85Je7d1fe824294
   liepin chatlist
   liepin recommend
-  liepin greet 123456
 `);
 }
 
@@ -100,13 +94,19 @@ function parseArgs(args: string[]): { command: string; options: Record<string, a
     } else if (arg === '--version' || arg === '-v') {
       options.version = true;
     } else if (arg.startsWith('--')) {
-      const key = arg.slice(2);
-      const value = args[i + 1];
-      if (value && !value.startsWith('--')) {
-        options[key] = value;
-        i++;
+      // 支持 --key=value（值可含 -- 开头，如 --message=--紧急）
+      const eq = arg.indexOf('=');
+      if (eq !== -1) {
+        options[arg.slice(2, eq)] = arg.slice(eq + 1);
       } else {
-        options[key] = true;
+        const key = arg.slice(2);
+        const value = args[i + 1];
+        if (value !== undefined && !value.startsWith('--')) {
+          options[key] = value;
+          i++;
+        } else {
+          options[key] = true;
+        }
       }
     } else if (!command) {
       command = arg;

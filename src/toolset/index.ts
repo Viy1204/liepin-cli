@@ -4,8 +4,6 @@
 
 export * from './login.js';
 export * from './search.js';
-export * from './detail.js';
-export * from './company.js';
 export * from './chatlist.js';
 export * from './chatmsg.js';
 export * from './recommend.js';

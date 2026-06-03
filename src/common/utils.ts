@@ -232,18 +232,6 @@ export async function liepinFetch(page: Page, url: string, options: RequestInit 
   }
 }
 
-/** 职位详情列定义 */
-export const JOB_DETAIL_COLUMNS = [
-  { header: '字段', key: 'field', width: 15 },
-  { header: '内容', key: 'value', width: 80 },
-];
-
-/** 公司信息列定义 */
-export const COMPANY_COLUMNS = [
-  { header: '字段', key: 'field', width: 15 },
-  { header: '内容', key: 'value', width: 80 },
-];
-
 /** 推荐候选人列定义 */
 export const RECOMMEND_COLUMNS = [
   { header: '姓名', key: 'name', width: 15 },

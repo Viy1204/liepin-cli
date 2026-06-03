@@ -4,8 +4,7 @@
 
 import { Page } from 'puppeteer-core';
 import {
-  CITY_CODES, WORKYEAR_CODES, DEGREE_CODES, INDUSTRY_CODES,
-  COMPSIZE_CODES, JOBKIND_CODES,
+  WORKYEAR_CODES, DEGREE_CODES, INDUSTRY_CODES,
   resolveCity, resolveCode, resolveSalary,
 } from '../common/utils.js';
 import { LIEPIN_LPT_API, lptFetch, navigateToLpt } from '../common/lpt-utils.js';
@@ -17,8 +16,6 @@ export interface SearchOptions {
   salary?: string;
   degree?: string;
   industry?: string;
-  compScale?: string;
-  jobKind?: string;
   page?: number;
   limit?: number;
 }
@@ -162,8 +159,6 @@ export async function search(page: Page, options: SearchOptions): Promise<any[]>
     salary = '',
     degree = '',
     industry = '',
-    compScale = '',
-    jobKind = '',
     page: pageNum = 1,
     limit = 20,
   } = options;
@@ -173,8 +168,6 @@ export async function search(page: Page, options: SearchOptions): Promise<any[]>
   const workYearCode = resolveWorkYears(experience);
   const eduLevel = resolveEduLevels(degree)[0] || '';
   const industryCode = resolveCode(industry, INDUSTRY_CODES);
-  resolveCode(compScale, COMPSIZE_CODES);
-  resolveCode(jobKind, JOBKIND_CODES);
   const salaryRange = resolveAnnualSalary(salary);
 
   // 确保在猎聘招聘者页面上
@@ -255,8 +248,6 @@ export const searchCommand = {
     { name: 'salary', type: 'string', default: '', help: '月薪范围：3K以下/3-5K/5-10K/10-15K/15-20K/20-30K/30-50K/50K以上' },
     { name: 'degree', type: 'string', default: '', help: '学历：大专/本科/硕士/博士' },
     { name: 'industry', type: 'string', default: '', help: '行业（如 "互联网" / "金融"）' },
-    { name: 'compScale', type: 'string', default: '', help: '公司规模（如 "100-499人" / "10000人以上"）' },
-    { name: 'jobKind', type: 'string', default: '', help: '职位类型：猎头/企业' },
     { name: 'page', type: 'int', default: 1, help: '页码（1-based）' },
     { name: 'limit', type: 'int', default: 20, help: '返回条数（1-40）' },
   ],
