@@ -1,5 +1,5 @@
 {
-  "name": "@viy/liepin-cli",
+  "name": "@viyzhu/liepin-cli",
   "version": "0.1.0",
   "description": "猎聘自动化 CLI：批量发消息、自动打招呼、候选人管理、职位搜索。基于 Puppeteer/CDP 驱动本机 Chrome，支持 AI Agent 编排",
   "keywords": [
@@ -42,11 +42,12 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc && chmod +x dist/cli/index.js",
+    "build": "tsc",
     "dev": "npm run build && node dist/cli/index.js",
     "capture:search": "node scripts/capture-search.mjs",
     "analyze:capture": "node scripts/analyze-capture.mjs",
-    "test": "node --test dist/**/*.test.js"
+    "test": "node --test dist/**/*.test.js",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "dotenv": "^17.4.2",

@@ -1,16 +1,16 @@
 # liepin-cli — 猎聘自动化 CLI | 批量发消息 · 自动打招呼 · AI Agent 招聘工具
 
-[![npm version](https://img.shields.io/npm/v/@viy/liepin-cli)](https://www.npmjs.com/package/@viy/liepin-cli)
-[![npm downloads](https://img.shields.io/npm/dm/@viy/liepin-cli)](https://www.npmjs.com/package/@viy/liepin-cli)
+[![npm version](https://img.shields.io/npm/v/@viyzhu/liepin-cli)](https://www.npmjs.com/package/@viyzhu/liepin-cli)
+[![npm downloads](https://img.shields.io/npm/dm/@viyzhu/liepin-cli)](https://www.npmjs.com/package/@viyzhu/liepin-cli)
 [![license](https://img.shields.io/github/license/Viy1204/liepin-cli)](./LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/Viy1204/liepin-cli)](https://github.com/Viy1204/liepin-cli)
 
-**liepin-cli**（`@viy/liepin-cli`）是开源的 **猎聘自动化命令行工具**。基于 Puppeteer / CDP 协议驱动本机 Chrome，无需 Selenium，把猎聘的核心 HR 操作搬进终端：**人才搜索**、**候选人管理**、**打招呼 / 发消息**、**简历预览**、**人才库管理**。
+**liepin-cli**（`@viyzhu/liepin-cli`）是开源的 **猎聘自动化命令行工具**。基于 Puppeteer / CDP 协议驱动本机 Chrome，无需 Selenium，把猎聘的核心 HR 操作搬进终端：**人才搜索**、**候选人管理**、**打招呼 / 发消息**、**简历预览**、**人才库管理**。
 
 每条命令都是单步原子操作，输出结构化文本；批量发消息等多步流程由调用方（脚本或 Claude / GPT / Gemini 等 **AI Agent**）循环编排，搭建全自动化招聘流水线。
 
 ```bash
-npm install -g @viy/liepin-cli@latest
+npm install -g @viyzhu/liepin-cli@latest
 liepin help
 ```
 
@@ -36,7 +36,7 @@ liepin help
 **要求**：Node.js ≥ 20，本机已安装 Chrome / Chromium。
 
 ```bash
-npm install -g @viy/liepin-cli@latest
+npm install -g @viyzhu/liepin-cli@latest
 liepin help
 ```
 
