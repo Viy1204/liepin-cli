@@ -94,7 +94,7 @@ test('installSkill: 默认 action=install 复制源 skill 目录', async () => {
       const result = await installSkill(null, {});
       assert.equal(result.success, true);
       assert.ok(result.files_copied >= 1, '源 skill 目录至少包含 SKILL.md');
-      assert.ok(result.source.endsWith('skills/liepin-cli'));
+      assert.match(result.source, /skills[\\/]liepin-cli$/);
       assert.equal(result.target, target);
       assert.ok(existsSync(join(target, 'SKILL.md')));
       assert.match(result.message, /Skill 已安装到/);
