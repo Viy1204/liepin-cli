@@ -20,13 +20,13 @@
     "候选人管理",
     "hr-tools"
   ],
-  "homepage": "https://github.com/viy/liepin-cli#readme",
+  "homepage": "https://github.com/Viy1204/liepin-cli#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/viy/liepin-cli.git"
+    "url": "git+https://github.com/Viy1204/liepin-cli.git"
   },
   "bugs": {
-    "url": "https://github.com/viy/liepin-cli/issues"
+    "url": "https://github.com/Viy1204/liepin-cli/issues"
   },
   "type": "module",
   "main": "dist/cli/index.js",
@@ -42,9 +42,11 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && chmod +x dist/cli/index.js",
     "dev": "npm run build && node dist/cli/index.js",
     "deploy": "node scripts/deploy.mjs",
+    "capture:search": "node scripts/capture-search.mjs",
+    "analyze:capture": "node scripts/analyze-capture.mjs",
     "test": "node --test dist/**/*.test.js"
   },
   "dependencies": {
