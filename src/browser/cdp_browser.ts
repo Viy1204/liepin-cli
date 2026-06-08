@@ -51,12 +51,9 @@ export class CdpBrowser {
       args.push(`--proxy-server=${this.options.proxy}`);
     }
 
-    if (this.options.headless) {
-      args.push('--headless=new');
-    }
-
     this.browser = await puppeteer.launch({
       executablePath,
+      headless: this.options.headless,
       args,
       userDataDir: this.options.userDataDir,
     });
