@@ -95,7 +95,7 @@ await page.evaluate(async (url, body) => {
 | `recommend` | 查看推荐候选人 |
 | `talent` | 查看人才库 |
 | `resume` | 查看简历详情（入参为 resume_id） |
-| `greet` | 向候选人打招呼（⚠️ 未验证，端点可能已失效） |
+| `greet` | 向候选人打招呼（一键沟通，使用职位预设招呼语；入参为候选人 user_id） |
 | `joblist` | 查看职位列表 |
 
 ## 反检测策略

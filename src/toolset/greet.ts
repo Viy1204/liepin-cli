@@ -1,70 +1,74 @@
 /**
- * 猎聘打招呼命令
+ * 猎聘打招呼命令 - 招聘者端
  *
- * ⚠️ 未经真机验证：本命令仍走老 C 端端点 api-c.liepin.com/...pc-greet-talent，
- * 而招聘者端实测已全面迁移到 api-lpt.liepin.com（参见 search/recommend/chatmsg）。
- * 该端点极可能已失效（返回 HTML 反爬挑战或 404）。修复需抓一次真实"打招呼"请求，
- * 换成对应的 LPT IM 发送接口后再启用。在此之前请勿依赖本命令。
+ * 走 LPT 接口 com.liepin.im.b.chat.to-chat2（抓包确认）：
+ *   body: usercIdEncode=<候选人 user_id>&ejobId=<职位 id>&imSign=&source=&ext=%7B%7D
+ *   resp: { flag:1, data:{} }
+ * 发起沟通即「一键打招呼」，使用职位预设招呼语，不支持自定义消息文本
+ * （如需个性化文案，建立会话后在 IM 中另行发送）。
+ *
+ * 入参是候选人 user_id（search / recommend 返回的 user_id，即 enusercId），
+ * 不是旧实现里的 C 端 talentId。可选先调 check-chat-privlege 校验沟通权限。
  */
 
 import { Page } from 'puppeteer-core';
-import {
-  LIEPIN_API,
-  navigateTo, liepinFetch, sleepRandom,
-} from '../common/utils.js';
+import { LIEPIN_LPT_API, lptFetch, navigateToLpt } from '../common/lpt-utils.js';
 
 export interface GreetOptions {
-  talentId: string;
-  message?: string;
-  jobId?: string;
+  usercId: string;
+  ejobId?: string;
 }
 
 export async function greet(page: Page, options: GreetOptions): Promise<any> {
-  const { talentId, message = '', jobId = '' } = options;
+  const { usercId, ejobId = '' } = options;
 
-  if (!talentId) {
-    throw new Error('人才 ID 不能为空');
+  if (!usercId) {
+    throw new Error('候选人 user_id 不能为空（取 search / recommend 结果里的 user_id）');
   }
 
-  // 导航到人才详情页
-  await navigateTo(page, `https://www.liepin.com/talent/${talentId}.html`);
+  await navigateToLpt(page, '/im', 2);
 
-  // 等待页面加载
-  await sleepRandom(1000, 2000);
+  // 1) 校验沟通权限（传了 ejobId 才校验，能提前拦截不可沟通 / 需付费的情况）
+  if (ejobId) {
+    const priv = await lptFetch(page, `${LIEPIN_LPT_API}/api/com.liepin.imbusiness.bpc.check-chat-privlege`, {
+      body: `oppositeUserId=${encodeURIComponent(usercId)}&enumLpScene=b_others&jobId=${encodeURIComponent(ejobId)}&jobkind=2`,
+      clientId: '40342',
+    });
+    const code = priv?.data?.chatCheckResultCode;
+    if (priv.flag === 1 && code && code !== 'can_chat') {
+      throw new Error(`无法打招呼（chatCheckResultCode=${code}）：该职位可能已无沟通次数或候选人不可沟通`);
+    }
+  }
 
-  // 发送打招呼请求
-  const response = await liepinFetch(page, `${LIEPIN_API}/api/com.liepin.recruitment.pc-greet-talent`, {
-    method: 'POST',
-    body: JSON.stringify({
-      talentId,
-      message: message || '您好，我对您的简历很感兴趣，希望有机会进一步沟通。',
-      jobId,
-    }),
+  // 2) 发起沟通（一键打招呼，使用职位预设招呼语）
+  const body = `usercIdEncode=${encodeURIComponent(usercId)}&ejobId=${encodeURIComponent(ejobId)}&imSign=&source=&ext=%7B%7D`;
+  const res = await lptFetch(page, `${LIEPIN_LPT_API}/api/com.liepin.im.b.chat.to-chat2`, {
+    body,
+    clientId: '40342',
   });
 
-  // 处理响应
-  if (!response || !response.success) {
-    throw new Error('打招呼失败：' + (response?.message || '未知错误'));
+  if (res.flag !== 1) {
+    throw new Error('打招呼失败：' + (res?.msg || res?.message || JSON.stringify(res).slice(0, 200)));
   }
 
   return {
     success: true,
-    message: '打招呼成功',
-    talentId,
+    message: '已发起沟通（使用职位预设招呼语；如需自定义文案请在 IM 会话中另发）',
+    usercId,
+    ejobId,
   };
 }
 
 /** 打招呼命令定义 */
 export const greetCommand = {
   name: 'greet',
-  description: '向候选人打招呼（⚠️ 未验证，端点可能已失效）',
+  description: '向候选人打招呼（一键沟通，使用职位预设招呼语）',
   args: [
-    { name: 'talentId', type: 'string', required: true, positional: true, help: '人才 ID' },
-    { name: 'message', type: 'string', default: '', help: '打招呼消息' },
-    { name: 'jobId', type: 'string', default: '', help: '关联职位 ID' },
+    { name: 'usercId', type: 'string', required: true, positional: true, help: '候选人 user_id（search / recommend 返回的 user_id）' },
+    { name: 'ejobId', type: 'string', default: '', help: '关联职位 ID（建议传，用于权限校验与归属）' },
   ],
   columns: [
-    { header: '结果', key: 'result', width: 80 },
+    { header: '结果', key: 'message', width: 60 },
   ],
   func: greet,
 };

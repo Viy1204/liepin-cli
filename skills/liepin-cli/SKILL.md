@@ -53,8 +53,8 @@ node /tmp/liepin-cli/dist/cli/index.js recommend
 # 查看人才库
 node /tmp/liepin-cli/dist/cli/index.js talent
 
-# 向候选人打招呼（⚠️ 未经真机验证，端点可能已失效，勿依赖）
-node /tmp/liepin-cli/dist/cli/index.js greet <人才ID>
+# 向候选人打招呼（一键沟通，使用职位预设招呼语；user_id 取 search/recommend 返回值）
+node /tmp/liepin-cli/dist/cli/index.js greet <user_id> --ejobId <职位ID>
 ```
 
 ### 聊天管理
@@ -79,8 +79,8 @@ node /tmp/liepin-cli/dist/cli/index.js chatmsg <对方imId>
 | | `--limit` | 返回条数 |
 | `chatmsg` | `oppositeImId` | 对方 imId（chatlist 的 im_id，必需） |
 | `resume` | `talentId` | 简历 ID（search 的 resume_id，必需） |
-| `greet` | `talentId` | 人才 ID（必需，⚠️ 未验证） |
-| | `--message` | 打招呼消息 |
+| `greet` | `usercId` | 候选人 user_id（search/recommend 返回的 user_id，必需） |
+| | `--ejobId` | 关联职位 ID（建议传，用于权限校验与归属） |
 
 ## 故障排除
 
@@ -114,4 +114,4 @@ export CHROME_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome
 - `liepin recommend` - 查看推荐候选人
 - `liepin talent` - 查看人才库
 - `liepin joblist` - 查看职位列表
-- `liepin greet` - 向候选人打招呼（⚠️ 未验证）
+- `liepin greet` - 向候选人打招呼（一键沟通，使用职位预设招呼语）

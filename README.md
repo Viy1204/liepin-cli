@@ -74,7 +74,7 @@ npm install && npm run build
 | `liepin recommend` | 查看推荐候选人 |
 | `liepin talent` | 查看人才库 |
 | `liepin resume <简历ID>` | 查看简历详情（传 search 返回的 resume_id） |
-| `liepin greet <人才ID>` | 向候选人打招呼（⚠️ 未验证，端点可能已失效） |
+| `liepin greet <user_id> [--ejobId <职位ID>]` | 向候选人打招呼（一键沟通，使用职位预设招呼语） |
 | `liepin joblist` | 查看职位列表 |
 
 完整用法：`liepin help`

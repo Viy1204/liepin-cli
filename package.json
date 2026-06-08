@@ -1,6 +1,6 @@
 {
   "name": "@viyzhu/liepin-cli",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "猎聘自动化 CLI：批量发消息、自动打招呼、候选人管理、职位搜索。基于 Puppeteer/CDP 驱动本机 Chrome，支持 AI Agent 编排",
   "keywords": [
     "liepin",
