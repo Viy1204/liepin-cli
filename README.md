@@ -1,20 +1,18 @@
-# liepin-cli — 猎聘招聘者端自动化 CLI | 人才搜索 · 简历查看 · AI Agent 招聘工具
+# liepin-cli — 猎聘招聘者端自动化 CLI | 人才搜索 · 简历查看 · AI Agent 友好
 
 [![npm version](https://img.shields.io/npm/v/@viyzhu/liepin-cli)](https://www.npmjs.com/package/@viyzhu/liepin-cli)
 [![npm downloads](https://img.shields.io/npm/dm/@viyzhu/liepin-cli)](https://www.npmjs.com/package/@viyzhu/liepin-cli)
-[![license](https://img.shields.io/github/license/Viy1204/liepin-cli)](./LICENSE)
+[![license: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](./LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/Viy1204/liepin-cli)](https://github.com/Viy1204/liepin-cli)
 
-**liepin-cli**（`@viyzhu/liepin-cli`）是开源的 **猎聘招聘者端（lpt.liepin.com）自动化命令行工具**。基于 Puppeteer / CDP 协议驱动本机 Chrome，无需 Selenium，把招聘者端的核心操作搬进终端：**人才搜索**、**简历查看**、**推荐 / 投递候选人管理**、**聊天记录查看**、**职位管理**。
+**liepin-cli**（`@viyzhu/liepin-cli`）是开源的 **猎聘招聘者端（lpt.liepin.com）自动化命令行工具**。基于 Puppeteer / CDP 协议驱动本机 Chrome，把招聘者端的核心操作搬进终端：**人才搜索**、**简历查看**、**推荐 / 人才库管理**、**主动打招呼**、**聊天记录查看**、**职位管理**。
 
-每条命令都是单步原子操作，输出结构化文本；批量筛选、多步流程由调用方（脚本或 Claude / GPT / Gemini 等 **AI Agent**）循环编排，搭建半自动化招聘流水线。
+每条命令都设计为无状态、单步可重入，输出结构化文本；批量筛选、多步流程由调用方（脚本或 Claude / GPT / Gemini 等 AI Agent）循环编排，搭建半自动化招聘流水线。
 
 ```bash
-npm install -g @viyzhu/liepin-cli@latest
+npm install -g @viyzhu/liepin-cli
 liepin help
 ```
-
-> 纯 CLI，不内置对话式 Agent。每条命令输出结构化纯文本，Agent 可直接解析并编排多步流程。
 
 ---
 
@@ -25,9 +23,16 @@ liepin help
 | 猎聘人才搜索 | `liepin search 前端工程师` |
 | 猎聘简历预览 | `liepin resume <简历ID>` |
 | 猎聘候选人筛选 | `liepin recommend` / `liepin talent` |
-| 猎聘脚本自动化 | 本机 Chrome + CDP，Cookie 本地存储 |
-| AI 招聘 Agent | 子进程调用，输出 Agent 友好 |
-| 数据隐私 | 不经过第三方服务器，数据在 `~/.liepin-cli/` |
+| 主动打招呼 | `liepin greet <user_id> --ejobId <jobId>` |
+| 聊天记录查看 | `liepin chatlist` / `liepin chatmsg <对方imId>` |
+| AI Agent 集成 | 子进程调用，每条命令输出结构化文本，可直接被 Agent 解析 |
+| 数据本地化 | 无中间层服务，cookie 与截图仅存在 `~/.liepin-cli/` |
+
+### 不适用场景
+
+- 仅做**公开页面**信息抓取（无需登录态）→ 用 web fetch / 通用爬虫更合适
+- **Boss 直聘** 同类需求 → 走 [boss-cli](https://github.com/Viy1204/boss-cli)
+- 投递后的**面试日程 / ATS 流转** → 那是 ATS / 招聘系统 skill 的事
 
 ---
 
@@ -36,31 +41,26 @@ liepin help
 **要求**：Node.js ≥ 20，本机已安装 Chrome / Chromium。
 
 ```bash
-npm install -g @viyzhu/liepin-cli@latest
+npm install -g @viyzhu/liepin-cli
 liepin help
 ```
 
-> **macOS / Linux 权限问题**：系统 Node 默认全局前缀在 `/usr/local`，当前账户无写权限。建议先把全局前缀挪到用户目录（一次性配置）：
+> **macOS / Linux 全局安装权限问题**：系统 Node 默认全局前缀在 `/usr/local`，当前账户无写权限。建议先把全局前缀挪到用户目录（一次性配置）：
 >
 > ```bash
 > mkdir -p ~/.npm-global
 > npm config set prefix ~/.npm-global
-> echo 'export PATH=~/.npm-global/bin:$PATH' >> ~/.zshrc   # bash 用 ~/.bash_profile
-> source ~/.zshrc
+> # macOS 默认 shell 是 zsh
+> echo 'export PATH=~/.npm-global/bin:$PATH' >> ~/.zshrc
+> # macOS bash / Linux
+> echo 'export PATH=~/.npm-global/bin:$PATH' >> ~/.bashrc
+> source ~/.zshrc  # 或 source ~/.bashrc
 > ```
 >
 > 使用 `fnm` / `nvm` / `volta` 的用户可跳过此步。Windows 用户无需此步。
 >
 > **Windows / Linux 找不到 Chrome**：自动探测覆盖 Chrome / Edge 的常见安装路径，
 > 若未命中请手动设置 `CHROME_PATH`（见下方「环境变量」）。
-
-### 从源码构建
-
-```bash
-git clone https://github.com/Viy1204/liepin-cli.git
-cd liepin-cli
-npm install && npm run build
-```
 
 ---
 
@@ -73,11 +73,11 @@ npm install && npm run build
 | `liepin chatmsg <对方imId>` | 查看与某候选人的聊天记录 |
 | `liepin recommend` | 查看推荐候选人 |
 | `liepin talent` | 查看人才库 |
-| `liepin resume <简历ID>` | 查看简历详情（传 search 返回的 resume_id） |
-| `liepin greet <user_id> [--ejobId <职位ID>]` | 向候选人打招呼（一键沟通，使用职位预设招呼语） |
+| `liepin resume <简历ID>` | 查看简历详情（传 search / recommend / talent 返回的 resume_id） |
+| `liepin greet <user_id> [--ejobId <职位ID>]` | **主动打招呼**：向候选人发站内信，使用该职位预设的招呼语 |
 | `liepin joblist` | 查看职位列表 |
 
-完整用法：`liepin help`
+完整用法与参数：`liepin help`
 
 ---
 
@@ -90,7 +90,7 @@ liepin login
 # 2. 搜索人才
 liepin search 前端工程师 --city 北京 --experience 3-5年
 
-# 3. 查看某候选人简历（resume_id 来自 search 结果）
+# 3. 查看某候选人简历（resume_id 来自 search / recommend / talent 结果）
 liepin resume <简历ID>
 
 # 4. 查看推荐候选人
@@ -99,6 +99,9 @@ liepin recommend
 # 5. 查看聊天列表 / 某会话记录（im_id 来自 chatlist）
 liepin chatlist
 liepin chatmsg <对方imId>
+
+# 6. 主动打招呼（user_id 来自 search / recommend / talent；ejobId 来自 joblist）
+liepin greet <user_id> --ejobId <jobId>
 ```
 
 ---
@@ -113,16 +116,19 @@ result=$(liepin search 前端工程师 --city 北京 --limit 5)
 echo "$result" | jq '.[0].title'
 ```
 
-### Claude Code 集成
+### Claude Code 集成（Agent Skills）
 
 ```bash
-# 安装 skill
+# 把 liepin-cli 注册为 Agent Skill
 liepin skill install
 
-# 在 Claude Code 中使用
-> 使用 liepin-cli 搜索前端工程师候选人
-> 用 liepin-cli 看看排第一的候选人简历
+# 卸载
+liepin skill uninstall
 ```
+
+安装后**默认复制到 `~/.agents/skills/liepin-cli/`**（Windows：`%USERPROFILE%\.agents\skills\liepin-cli`）。重启 Claude Code 后，在对话中说"用 liepin 搜前端"即可触发。
+
+> 其他兼容 Agent（Codex、Pi、OpenCode、MiniMax Code、WorkBuddy、Cherry Studio）请参考各自文档的 skills 目录位置，复制同一份 `SKILL.md` 即可，无需改写。
 
 ---
 
@@ -156,20 +162,19 @@ $env:CHROME_PATH="C:\Program Files\Google\Chrome\Application\chrome.exe"
 
 1. 重新跑 `liepin login`，在弹出的浏览器里扫码登录招聘者端
 2. 确认 `LIEPIN_USER_DATA_DIR` 目录正确（cookie 持久化在此）
-3. 命令报“返回了 HTML / 反爬挑战”多为登录态过期，重新 `liepin login` 即可
+3. 命令报"返回了 HTML / 反爬挑战"多为登录态过期，重新 `liepin login` 即可
 
 ### 被检测为自动化
 
-1. 增加随机延迟
-2. 检查 User-Agent
-3. 使用代理
-4. 减少操作频率
+如频繁被风控拦截，请开 issue 带上 `liepin --debug` 输出，maintainer 协助排查。
 
 ---
 
 ## 开发
 
 ```bash
+git clone https://github.com/Viy1204/liepin-cli.git
+cd liepin-cli
 npm install
 npm run build && npm test
 ```
@@ -180,11 +185,11 @@ npm run build && npm test
 
 ## 许可证
 
-GPL-3.0
+GPL-3.0，详见 [LICENSE](./LICENSE)。
 
 ---
 
 ## 相关项目
 
-- [boss-cli](https://github.com/viy/boss-cli) - Boss直聘自动化 CLI
-- [opencli](https://github.com/jackwener/opencli) - 开源 CLI 框架
+- [boss-cli](https://github.com/Viy1204/boss-cli) — Boss 直聘自动化 CLI
+- [opencli](https://github.com/jackwener/opencli) — 开源 CLI 框架
