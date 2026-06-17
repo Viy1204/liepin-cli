@@ -23,7 +23,7 @@ liepin help
 | 猎聘人才搜索 | `liepin search 前端工程师` |
 | 猎聘简历预览 | `liepin resume <简历ID>` |
 | 猎聘候选人筛选 | `liepin recommend` / `liepin talent` |
-| 主动打招呼 | `liepin greet <user_id> --ejobId <jobId>` |
+| 主动打招呼 | `liepin greet <resume_id> --ejobId <jobId> --message "您好，方便发作品集看看吗？"` |
 | 聊天记录查看 | `liepin chatlist` / `liepin chatmsg <对方imId>` |
 | AI Agent 集成 | 子进程调用，每条命令输出结构化文本，可直接被 Agent 解析 |
 | 数据本地化 | 无中间层服务，cookie 与截图仅存在 `~/.liepin-cli/` |
@@ -74,7 +74,7 @@ liepin help
 | `liepin recommend` | 查看推荐候选人 |
 | `liepin talent` | 查看人才库 |
 | `liepin resume <简历ID>` | 查看简历详情（传 search / recommend / talent 返回的 resume_id） |
-| `liepin greet <user_id> [--ejobId <职位ID>]` | **主动打招呼**：向候选人发站内信，使用该职位预设的招呼语 |
+| `liepin greet <resume_id 或 user_id> [--ejobId <职位ID>] [--message <消息>]` | **主动打招呼**：发起沟通，传 `resume_id` 时可补发自定义消息 |
 | `liepin joblist` | 查看职位列表 |
 
 完整用法与参数：`liepin help`
@@ -100,8 +100,8 @@ liepin recommend
 liepin chatlist
 liepin chatmsg <对方imId>
 
-# 6. 主动打招呼（user_id 来自 search / recommend / talent；ejobId 来自 joblist）
-liepin greet <user_id> --ejobId <jobId>
+# 6. 主动打招呼（resume_id / user_id 来自 search / recommend / talent；ejobId 来自 joblist）
+liepin greet <resume_id> --ejobId <jobId> --message "您好，方便发一份作品集看看吗？"
 ```
 
 ---
