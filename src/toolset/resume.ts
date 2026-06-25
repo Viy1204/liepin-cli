@@ -75,7 +75,8 @@ export async function resume(page: Page, options: ResumeOptions): Promise<any> {
     skills: (vo.credentialNames || []).join('、'),
     languages: joinLines(vo.languages, (l: any) => l.nameShow || ''),
     work_history: joinLines(vo.workExperiences, (w: any) =>
-      `${w.timespan || ''} ${w.compName || ''} / ${w.jobTitleName || w.title || ''}`.trim()),
+      (`${w.timespan || ''} ${w.compName || ''} / ${w.jobTitleName || w.title || ''}`.trim()
+        + (w.duty ? `\n${w.duty}` : ''))),
     education_history: joinLines(vo.eduExperiences, (e: any) =>
       `${e.eduTimeSpan || ''} ${e.school || ''} / ${e.special || ''} / ${e.degreeName || ''}`.trim()),
     resume_id: String(vo.resId || talentId),
