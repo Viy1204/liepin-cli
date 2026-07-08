@@ -217,7 +217,7 @@ export async function search(page: Page, options: SearchOptions): Promise<any[]>
   // 确保在猎聘招聘者页面上
   const currentUrl = await page.evaluate(() => window.location.href);
   if (!String(currentUrl).includes('lpt.liepin.com/search')) {
-    console.log('正在跳转到招聘者端搜索人才...');
+    console.error('正在跳转到招聘者端搜索人才...');
     await navigateToLpt(page, '/search', 2);
   }
 
