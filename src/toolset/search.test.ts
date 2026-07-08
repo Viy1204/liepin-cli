@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildSearchBody, mapJobCard } from './search.js';
+import { buildSearchBody, mapJobCard, resolveUserStatus, resolveAgeRange } from './search.js';
 
 function parseSearchBody(body: string) {
   const params = new URLSearchParams(body);
@@ -50,6 +50,46 @@ test('buildSearchBody: 常用筛选条件透传', () => {
   assert.equal(cv.industrys, '010');
   assert.equal(cv.wantYearSalaryLow, '240');
   assert.equal(cv.wantYearSalaryHigh, '360');
+});
+
+test('buildSearchBody: userStatus/age 透传（issue #10）', () => {
+  const { cv } = parseSearchBody(buildSearchBody({
+    userStatus: '1,2,7',
+    age: '25,35',
+  }));
+  assert.equal(cv.userStatus, '1,2,7');
+  assert.equal(cv.age, '25,35');
+});
+
+test('buildSearchBody: 未传 userStatus/age 时保持空串', () => {
+  const { cv } = parseSearchBody(buildSearchBody({}));
+  assert.equal(cv.userStatus, '');
+  assert.equal(cv.age, '');
+});
+
+test('resolveUserStatus: 合法多选规范化，空串不限', () => {
+  assert.equal(resolveUserStatus(''), '');
+  assert.equal(resolveUserStatus('3'), '3');
+  assert.equal(resolveUserStatus(' 1, 2 ,7 '), '1,2,7');
+});
+
+test('resolveUserStatus: 越界/非法码报错并带码表', () => {
+  assert.throws(() => resolveUserStatus('8'), /--user-status 取值无效/);
+  assert.throws(() => resolveUserStatus('0'), /码表/);
+  assert.throws(() => resolveUserStatus('abc'), /--user-status 取值无效/);
+  assert.throws(() => resolveUserStatus(','), /--user-status 取值无效/);
+});
+
+test('resolveAgeRange: 合法区间规范化，空串不限', () => {
+  assert.equal(resolveAgeRange(''), '');
+  assert.equal(resolveAgeRange('25,35'), '25,35');
+  assert.equal(resolveAgeRange(' 25 , 35 '), '25,35');
+});
+
+test('resolveAgeRange: 非法格式与倒置区间报错', () => {
+  assert.throws(() => resolveAgeRange('25'), /--age 格式无效/);
+  assert.throws(() => resolveAgeRange('25-35'), /--age 格式无效/);
+  assert.throws(() => resolveAgeRange('35,25'), /--age 区间无效/);
 });
 
 test('buildSearchBody: 输出 application/x-www-form-urlencoded 需要的两个字段', () => {

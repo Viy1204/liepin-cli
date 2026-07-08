@@ -75,6 +75,8 @@ node /tmp/liepin-cli/dist/cli/index.js chatmsg <对方imId>
 | | `--experience` | 工作经验（如：3-5年） |
 | | `--salary` | 薪资范围（如：20-30K） |
 | | `--degree` | 学历（如：本科） |
+| | `--user-status` | 求职状态，逗号多选：1离职找工作/2在职急寻/3在职暂不跳/4在校不找/5在校看机会/6在校可到岗/7离校找工作（如 `1,2,7`） |
+| | `--age` | 年龄区间 `低,高`（如 `25,35`） |
 | | `--page` | 页码 |
 | | `--limit` | 返回条数 |
 | `chatmsg` | `oppositeImId` | 对方 imId（chatlist 的 im_id，必需） |

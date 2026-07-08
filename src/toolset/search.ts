@@ -16,8 +16,48 @@ export interface SearchOptions {
   salary?: string;
   degree?: string;
   industry?: string;
+  'user-status'?: string;
+  age?: string;
   page?: number;
   limit?: number;
+}
+
+/** 求职状态码表（2026-07 实测，8 及以上服务端返回 0 召回；见 issue #10） */
+export const USER_STATUS_CODES: Record<string, string> = {
+  '1': '离职，正在找工作',
+  '2': '在职，急寻新工作',
+  '3': '在职，暂无跳槽打算',
+  '4': '在校，暂时不找工作',
+  '5': '在校，看看机会',
+  '6': '在校，可即刻到岗',
+  '7': '离校，正在找工作',
+};
+
+/** 校验并规范化求职状态：逗号多选，如 "1,2,7"；空串表示不限 */
+export function resolveUserStatus(value: string): string {
+  if (!value) return '';
+  const codes = value.split(',').map(s => s.trim()).filter(Boolean);
+  const invalid = codes.filter(c => !USER_STATUS_CODES[c]);
+  if (codes.length === 0 || invalid.length > 0) {
+    const table = Object.entries(USER_STATUS_CODES).map(([k, v]) => `${k}=${v}`).join('；');
+    throw new Error(`--user-status 取值无效：“${value}”。支持逗号多选，码表：${table}`);
+  }
+  return codes.join(',');
+}
+
+/** 校验并规范化年龄区间："低,高"（如 "25,35"）；空串表示不限 */
+export function resolveAgeRange(value: string): string {
+  if (!value) return '';
+  const m = value.trim().match(/^(\d{1,3})\s*,\s*(\d{1,3})$/);
+  if (!m) {
+    throw new Error(`--age 格式无效：“${value}”。应为 "低,高"（如 25,35）`);
+  }
+  const low = Number(m[1]);
+  const high = Number(m[2]);
+  if (low > high) {
+    throw new Error(`--age 区间无效：低值 ${low} 大于高值 ${high}`);
+  }
+  return `${low},${high}`;
 }
 
 function resolveWorkYears(value: string): string {
@@ -52,6 +92,8 @@ export function buildSearchBody(params: {
   industry?: string;
   salaryLow?: string;
   salaryHigh?: string;
+  userStatus?: string;
+  age?: string;
 }) {
   const ckId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
   const cvSearchConditionInputVo = {
@@ -77,13 +119,13 @@ export function buildSearchBody(params: {
     wantIndustrys: '',
     wantJobTitles: '',
     activeStatus: '',
-    userStatus: '',
+    userStatus: params.userStatus || '',
     yearSalarylow: '',
     yearSalaryhigh: '',
     wantYearSalaryLow: params.salaryLow || '',
     wantYearSalaryHigh: params.salaryHigh || '',
     sex: '',
-    age: '',
+    age: params.age || '',
     special: '',
     sortflag: '',
     abroadEdu: '',
@@ -169,6 +211,8 @@ export async function search(page: Page, options: SearchOptions): Promise<any[]>
   const eduLevel = resolveEduLevels(degree)[0] || '';
   const industryCode = resolveCode(industry, INDUSTRY_CODES);
   const salaryRange = resolveAnnualSalary(salary);
+  const userStatus = resolveUserStatus(options['user-status'] || '');
+  const ageRange = resolveAgeRange(options.age || '');
 
   // 确保在猎聘招聘者页面上
   const currentUrl = await page.evaluate(() => window.location.href);
@@ -192,6 +236,8 @@ export async function search(page: Page, options: SearchOptions): Promise<any[]>
       industry: industryCode,
       salaryLow: salaryRange.low,
       salaryHigh: salaryRange.high,
+      userStatus,
+      age: ageRange,
     });
 
     const data = await lptFetch(page, apiUrl, { body });
@@ -248,6 +294,8 @@ export const searchCommand = {
     { name: 'salary', type: 'string', default: '', help: '月薪范围：3K以下/3-5K/5-10K/10-15K/15-20K/20-30K/30-50K/50K以上' },
     { name: 'degree', type: 'string', default: '', help: '学历：大专/本科/硕士/博士' },
     { name: 'industry', type: 'string', default: '', help: '行业（如 "互联网" / "金融"）' },
+    { name: 'user-status', type: 'string', default: '', help: '求职状态，逗号多选：1离职找工作/2在职急寻/3在职暂不跳/4在校不找/5在校看机会/6在校可到岗/7离校找工作（如 "1,2,7"）' },
+    { name: 'age', type: 'string', default: '', help: '年龄区间 "低,高"（如 "25,35"）' },
     { name: 'page', type: 'int', default: 1, help: '页码（1-based）' },
     { name: 'limit', type: 'int', default: 20, help: '返回条数（1-40）' },
   ],
