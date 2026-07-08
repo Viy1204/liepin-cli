@@ -1,6 +1,6 @@
 name: publish
 
-# 打 v* tag 时自动发布到 npm。
+# 打 v* tag 时自动发布到 npm，并自动创建 GitHub Release（否则 Releases 页会一直停在旧版）。
 # 认证用 npm Trusted Publishing (OIDC)，无需 NPM_TOKEN：
 # 需先在 npmjs.com 包设置里把本仓库 + 本 workflow 文件名配为 Trusted Publisher。
 on:
@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       id-token: write   # OIDC 发布所需
-      contents: read
+      contents: write   # 创建 GitHub Release 所需
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -27,3 +27,8 @@ jobs:
       - run: npm run build
       - run: npm test
       - run: npm publish
+      # npm 发布成功后自动建 Release：--generate-notes 按上个 tag 到本 tag 的 commit 自动生成变更说明
+      - run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes --latest
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
