@@ -38,12 +38,8 @@ export class CdpBrowser {
       throw new Error('Chrome/Edge 可执行文件路径未设置。请设置 CHROME_PATH 或 PUPPETEER_EXECUTABLE_PATH 环境变量。');
     }
 
+    // 不加 --no-sandbox / --disable-gpu 等开关：均为自动化特征，且桌面环境不需要
     const args = [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-accelerated-2d-canvas',
-      '--disable-gpu',
       `--window-size=${config.viewport.width},${config.viewport.height}`,
     ];
 
@@ -59,17 +55,14 @@ export class CdpBrowser {
     });
 
     this.page = await this.browser.newPage();
-    
+
     // 设置视口
     await this.page.setViewport({
       width: config.viewport.width,
       height: config.viewport.height,
     });
 
-    // 设置 User-Agent
-    await this.page.setUserAgent(
-      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    );
+    // 不覆盖 User-Agent：伪造的 UA 与 sec-ch-ua Client Hints、真实平台矛盾，反而是风控指纹
 
     return this.page;
   }

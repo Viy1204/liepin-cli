@@ -11,7 +11,7 @@
  */
 
 import { Page } from 'puppeteer-core';
-import { LIEPIN_LPT_API, lptFetch, navigateToLpt } from '../common/lpt-utils.js';
+import { LIEPIN_LPT_API, lptFetch, navigateToLpt, readLptImId } from '../common/lpt-utils.js';
 import { sleepRandom } from '../common/utils.js';
 
 export interface GreetOptions {
@@ -106,21 +106,60 @@ async function pickChatJob(page: Page, ejobId: string): Promise<ChatJob> {
   return selected;
 }
 
-async function sendMessageInIm(page: Page, resumeId: string, message: string): Promise<void> {
+async function verifyMessageSent(page: Page, oppositeImId: string, message: string): Promise<boolean> {
+  const imId = await readLptImId(page);
+  if (!imId || !oppositeImId) return false;
+
+  const body = `imUserType=2&imId=${encodeURIComponent(imId)}&imApp=1&oppositeImId=${encodeURIComponent(oppositeImId)}&maxMessageId=&pageSize=10`;
+  const data = await lptFetch(page, `${LIEPIN_LPT_API}/api/com.liepin.im.b.chat.chat-list`, {
+    body,
+    clientId: '40342',
+  });
+  if (data.flag !== 1) return false;
+
+  const list = data.data?.list || [];
+  return list.some((item: any) => {
+    if (item.msgSendImId !== imId) return false;
+    try {
+      const bodyItem = JSON.parse(item.payload || '{}').bodies?.[0];
+      return bodyItem?.type === 'txt' && String(bodyItem.msg || '') === message;
+    } catch {
+      return false;
+    }
+  });
+}
+
+async function sendMessageInIm(page: Page, resumeId: string, oppositeImId: string, message: string): Promise<void> {
   await page.goto(`https://lpt.liepin.com/resume/detail?resIdEncode=${encodeURIComponent(resumeId)}&sfrom=R_SEARCH_CONDITION`, {
     waitUntil: 'networkidle2',
   });
   await page.waitForSelector('.xpath-open-im-btn', { timeout: 20000 });
   await page.click('.xpath-open-im-btn');
   await page.waitForSelector('.im-ui-textarea', { timeout: 20000 });
-  await page.focus('.im-ui-textarea');
-  await page.keyboard.type(message, { delay: 20 });
-  await page.click('.im-ui-basic-send-btn');
+
+  // React 受控组件：keyboard.type 中文输入极慢且易超时，execCommand 才能触发 React 状态更新
+  await page.evaluate((msg: string) => {
+    const el = document.querySelector('.im-ui-textarea') as HTMLTextAreaElement;
+    el.focus();
+    if (typeof el.select === 'function') el.select();
+    document.execCommand('insertText', false, msg);
+  }, message);
+
+  // 输入生效后发送按钮才会从 disabled 变为可用
+  await page.waitForSelector('.im-ui-basic-send-btn:not([disabled])', { timeout: 5000 });
+  await page.click('.im-ui-basic-send-btn:not([disabled])');
   await sleepRandom(1500, 2500);
 
-  const visible = await page.evaluate((text: string) => document.body.innerText.includes(text), message);
-  if (!visible) {
-    throw new Error('消息发送后未在聊天窗口中确认显示');
+  const sent = await verifyMessageSent(page, oppositeImId, message);
+  if (!sent) {
+    // imId 缺失或 API 未及时落库时退回页面文本兜底检查
+    const visible = await page.evaluate(
+      (text: string) => document.body.innerText.includes(text),
+      message.split('\n')[0],
+    );
+    if (!visible) {
+      throw new Error('消息发送后未确认成功（聊天记录与页面中均未找到该消息）');
+    }
   }
 }
 
@@ -166,7 +205,7 @@ export async function greet(page: Page, options: GreetOptions): Promise<any> {
     if (!resume.resumeId) {
       throw new Error('发送自定义消息需要传入 resume_id；仅传 user_id 时只能发起默认沟通');
     }
-    await sendMessageInIm(page, resume.resumeId, message);
+    await sendMessageInIm(page, resume.resumeId, resume.imId, message);
   }
 
   return {

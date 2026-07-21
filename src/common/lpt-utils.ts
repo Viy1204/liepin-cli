@@ -8,6 +8,20 @@ import { randomUUID } from 'crypto';
 
 export const LIEPIN_LPT_API = 'https://api-lpt.liepin.com';
 
+/**
+ * 触发猎聘风控（验证码 / 频率限制 / 反爬虫挑战）时抛出。
+ * 上层遇到此错误应立即停止重试，等待或让用户在浏览器中手动完成验证，
+ * 连续换方案试探只会加重风控。
+ */
+export class RiskControlError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'RiskControlError';
+  }
+}
+
+const RISK_CONTROL_PATTERN = /验证码|安全验证|请完成验证|操作(过于)?频繁|访问异常|存在风险|风控/;
+
 /** LPT API 请求 */
 export async function lptFetch(page: Page, url: string, opts: { body?: string; clientId?: string } = {}): Promise<any> {
   const { body = null, clientId = '40156' } = opts;
@@ -54,14 +68,24 @@ export async function lptFetch(page: Page, url: string, opts: { body?: string; c
     throw new Error(`LPT HTTP 错误: ${res.status}`);
   }
   if (res.text.trim().startsWith('<')) {
-    throw new Error('LPT 返回了 HTML（可能是反爬虫挑战），请重新登录');
+    throw new RiskControlError('LPT 返回了 HTML（可能是反爬虫挑战），请在浏览器中重新登录或完成验证后再试');
   }
-  
+
+  let data: any;
   try {
-    return JSON.parse(res.text);
+    data = JSON.parse(res.text);
   } catch (e) {
     throw new Error(`LPT JSON 解析失败: ${res.text.slice(0, 200)}`);
   }
+
+  if (data?.flag !== 1) {
+    const msg = String(data?.msg || data?.message || '');
+    if (RISK_CONTROL_PATTERN.test(msg)) {
+      throw new RiskControlError(`触发猎聘风控：${msg}。请停止自动化操作，在浏览器中手动完成验证后再继续`);
+    }
+  }
+
+  return data;
 }
 
 /** 导航到 LPT 页面 */

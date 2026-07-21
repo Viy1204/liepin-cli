@@ -5,7 +5,7 @@
 import { Page } from 'puppeteer-core';
 import {
   WORKYEAR_CODES, DEGREE_CODES, INDUSTRY_CODES,
-  resolveCity, resolveCode, resolveSalary,
+  resolveCity, resolveCode, resolveSalary, sleepRandom,
 } from '../common/utils.js';
 import { LIEPIN_LPT_API, lptFetch, navigateToLpt } from '../common/lpt-utils.js';
 
@@ -261,9 +261,12 @@ export async function search(page: Page, options: SearchOptions): Promise<any[]>
     }
 
     currentPage++;
-    
+
     // 防止无限循环
     if (currentPage > pageNum + 10) break;
+
+    // 翻页间隔，避免密集请求触发风控
+    if (allJobs.length < limit) await sleepRandom(800, 2000);
   }
 
   return allJobs;
