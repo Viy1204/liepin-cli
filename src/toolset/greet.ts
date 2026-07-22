@@ -171,7 +171,8 @@ export async function greet(page: Page, options: GreetOptions): Promise<any> {
     throw new Error('候选人 ID 不能为空（可传 search 返回的 resume_id 或 user_id）');
   }
 
-  await navigateToLpt(page, '/im', 2);
+  // 落到 LPT 同源页面即可（后续全走 api-lpt 接口 / 自身 resume/detail 导航）；旧 /im 路由已 404，改用 /recommend
+  await navigateToLpt(page, '/recommend', 2);
   const resume = looksLikeUserId(targetId)
     ? { resumeId: '', usercId: targetId, imId: '', name: '' }
     : await getResumeInfo(page, targetId);

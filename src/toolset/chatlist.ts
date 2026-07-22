@@ -12,8 +12,9 @@ export interface ChatlistOptions {
 export async function chatlist(page: Page, options: ChatlistOptions): Promise<any[]> {
   const { limit = 30 } = options;
 
-  // 导航到 LPT 聊天页面
-  await navigateToLpt(page, '/im', 3);
+  // 落到 LPT 同源页面拿 cookie/imId（IM 数据走 api-lpt 接口，不依赖页面 DOM）；
+  // 旧 /im 路由已被猎聘改版删除会 404，改用有效路由 /recommend
+  await navigateToLpt(page, '/recommend', 3);
 
   // 读取 imId
   const imId = await readLptImId(page);

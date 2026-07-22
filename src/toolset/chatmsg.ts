@@ -32,7 +32,8 @@ export async function chatmsg(page: Page, options: ChatmsgOptions): Promise<any[
     throw new Error('对方 imId 不能为空（取 chatlist 结果里的 im_id）');
   }
 
-  await navigateToLpt(page, '/im', 3);
+  // 落到 LPT 同源页面拿 cookie/imId（消息走 api-lpt 接口）；旧 /im 路由已 404，改用 /recommend
+  await navigateToLpt(page, '/recommend', 3);
 
   const imId = await readLptImId(page);
   if (!imId) {
