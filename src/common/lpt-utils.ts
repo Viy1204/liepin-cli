@@ -3,7 +3,7 @@
  */
 
 import { Page } from 'puppeteer-core';
-import { sleep } from './utils.js';
+import { sleep, AuthExpiredError, RELOGIN_HINT, isAuthExpiredResponse } from './utils.js';
 import { randomUUID } from 'crypto';
 
 export const LIEPIN_LPT_API = 'https://api-lpt.liepin.com';
@@ -21,6 +21,8 @@ export class RiskControlError extends Error {
 }
 
 const RISK_CONTROL_PATTERN = /验证码|安全验证|请完成验证|操作(过于)?频繁|访问异常|存在风险|风控/;
+
+export { AuthExpiredError, RELOGIN_HINT, isAuthExpiredResponse } from './utils.js';
 
 /** LPT API 请求 */
 export async function lptFetch(page: Page, url: string, opts: { body?: string; clientId?: string } = {}): Promise<any> {
@@ -64,6 +66,10 @@ export async function lptFetch(page: Page, url: string, opts: { body?: string; c
   if (res.error) {
     throw new Error(`LPT 请求失败: ${res.error}`);
   }
+  // 401/403 基本就是登录态没了，直接给重登指引，别让调用方去猜（须先于通用 !ok 分支）
+  if (res.status === 401 || res.status === 403) {
+    throw new AuthExpiredError(`猎聘登录态已失效（HTTP ${res.status}）。${RELOGIN_HINT}`);
+  }
   if (!res.ok) {
     throw new Error(`LPT HTTP 错误: ${res.status}`);
   }
@@ -82,6 +88,12 @@ export async function lptFetch(page: Page, url: string, opts: { body?: string; c
     const msg = String(data?.msg || data?.message || '');
     if (RISK_CONTROL_PATTERN.test(msg)) {
       throw new RiskControlError(`触发猎聘风控：${msg}。请停止自动化操作，在浏览器中手动完成验证后再继续`);
+    }
+    // -1401 / -1701 等登录态失效码：重试无意义，直接指引重登
+    if (isAuthExpiredResponse(data)) {
+      throw new AuthExpiredError(
+        `猎聘登录态已失效（flag=${data?.flag}${msg ? `，${msg}` : ''}）。${RELOGIN_HINT}`,
+      );
     }
   }
 

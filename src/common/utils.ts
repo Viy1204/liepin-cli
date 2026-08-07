@@ -4,6 +4,37 @@
 
 import { Page } from 'puppeteer-core';
 
+/**
+ * 登录态失效（cookie 过期 / 被踢下线）时抛出。
+ * 与风控区分：风控要等/人工过验证，登录失效必须重新登录，重试再多次也没用。
+ */
+export class AuthExpiredError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'AuthExpiredError';
+  }
+}
+
+/** 猎聘在登录态失效时返回的 flag 码（实测：-1401 未登录 / -1701 会话失效）。 */
+const AUTH_EXPIRED_FLAGS = new Set([-1401, -1701]);
+const AUTH_EXPIRED_PATTERN = /未登录|登录已?失效|登录超时|重新登录|请先登录|会话失效|身份过期/;
+
+/** 统一的重登指引，各命令报错时附上，避免只丢一个裸错误码。 */
+export const RELOGIN_HINT =
+  '请执行 `liepin login` 在浏览器中重新登录招聘者端，登录完成后再重跑本命令。';
+
+/** 判断一个猎聘响应是不是登录态失效。命中 flag 码或 msg 文案都算。 */
+export function isAuthExpiredResponse(data: any): boolean {
+  if (!data || typeof data !== 'object') {
+    return false;
+  }
+  if (AUTH_EXPIRED_FLAGS.has(Number(data.flag))) {
+    return true;
+  }
+  const msg = String(data.msg ?? data.message ?? '');
+  return AUTH_EXPIRED_PATTERN.test(msg);
+}
+
 /** 猎聘域名 */
 export const LIEPIN_DOMAIN = 'www.liepin.com';
 export const LIEPIN_API = 'https://api-c.liepin.com';
@@ -219,17 +250,30 @@ export async function liepinFetch(page: Page, url: string, options: RequestInit 
   if (result.error) {
     throw new Error(`猎聘请求失败 (${url}): ${result.error}`);
   }
+  if (result.status === 401 || result.status === 403) {
+    throw new AuthExpiredError(`猎聘登录态已失效（HTTP ${result.status}，${url}）。${RELOGIN_HINT}`);
+  }
   if (!result.ok) {
     throw new Error(`猎聘 HTTP ${result.status} (${url}): ${result.text.slice(0, 200)}`);
   }
   if (result.text.trim().startsWith('<')) {
-    throw new Error(`猎聘返回了 HTML (${url})，可能是登录态失效或反爬虫挑战`);
+    // 返回 HTML 绝大多数是被弹回登录页，给出可执行的下一步而不是二选一的猜测
+    throw new AuthExpiredError(
+      `猎聘返回了 HTML (${url})，通常是登录态失效被弹回登录页（也可能是反爬挑战）。${RELOGIN_HINT}`,
+    );
   }
+  let parsed: any;
   try {
-    return JSON.parse(result.text);
+    parsed = JSON.parse(result.text);
   } catch {
     throw new Error(`猎聘 JSON 解析失败 (${url}): ${result.text.slice(0, 200)}`);
   }
+  if (isAuthExpiredResponse(parsed)) {
+    throw new AuthExpiredError(
+      `猎聘登录态已失效（flag=${parsed?.flag}${parsed?.msg ? `，${parsed.msg}` : ''}，${url}）。${RELOGIN_HINT}`,
+    );
+  }
+  return parsed;
 }
 
 /** 推荐候选人列定义 */
