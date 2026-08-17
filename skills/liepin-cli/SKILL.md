@@ -16,6 +16,21 @@ liepin-cli 是猎聘招聘者端（lpt.liepin.com）自动化命令行工具，�
 - 聊天列表与聊天记录
 - 职位列表浏览
 
+## 浏览器默认看不见（无头）
+
+浏览器**默认无头**，屏幕上没有窗口——有头窗口一启动就抢键盘焦点，会打断用户手上的事。
+所以「看不到浏览器」不是故障，别去排查。
+
+浏览器还**跨命令常驻**（占固定端口 53471，命令结束只断 CDP），下条命令复用同一只、同一登录态。
+
+- **想看浏览器在做什么** → 优先用 DSH 的「招聘浏览器」面板（实时画面推到 Web UI，能看能点，不抢焦点）
+- **确实需要真窗口**（人工操作页面）→ `RECRUIT_BROWSER_HIDDEN=false liepin <cmd>`
+  或 `LIEPIN_HEADLESS=false liepin <cmd>`
+- **换了变量没变可见？** 端口上已有实例会被复用。先 `liepin quit`，下条命令才会按新模式重启
+- **扫码登录不用管** → `liepin login` 会自己把无头实例关掉、以有头重启
+- **释放内存** → `liepin quit`（登录态保留，下条命令自动重新拉起）
+- **查在跑的是什么模式** → `curl http://127.0.0.1:53471/json/version`，UA 含 `HeadlessChrome` 即无头
+
 ## 环境要求
 
 - Node.js ≥ 20
@@ -127,3 +142,4 @@ export CHROME_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome
 - `liepin talent` - 查看人才库
 - `liepin joblist` - 查看职位列表
 - `liepin greet` - 向候选人打招呼（支持 resume_id + 自定义消息）
+- `liepin quit` - 关掉常驻浏览器（登录态保留）

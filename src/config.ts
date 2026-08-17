@@ -64,9 +64,10 @@ export const DEFAULT_CONFIG = {
     height: 800,
   },
   
-  /** 是否无头模式 */
-  headless: process.env.LIEPIN_HEADLESS === 'true',
-  
+  // 无头与否不在这里：它需要在每条命令**运行时**读环境变量（login 要把已在跑的无头
+  // 实例切回有头），而 config 是模块加载时求值一次的。见
+  // browser/cdp_browser.ts 的 resolveHeadlessFromEnv()。
+
   /** 是否使用代理 */
   proxy: process.env.LIEPIN_PROXY || '',
   

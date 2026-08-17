@@ -76,6 +76,7 @@ liepin help
 | `liepin resume <简历ID>` | 查看简历详情（传 search / recommend / talent 返回的 resume_id） |
 | `liepin greet <resume_id 或 user_id> [--ejobId <职位ID>] [--message <消息>]` | **主动打招呼**：发起沟通，传 `resume_id` 时可补发自定义消息 |
 | `liepin joblist` | 查看职位列表 |
+| `liepin quit` | 关掉常驻的浏览器（登录态保留） |
 
 完整用法与参数：`liepin help`
 
@@ -139,9 +140,40 @@ liepin skill uninstall
 | `CHROME_PATH` | Chrome/Edge 可执行文件路径；Windows / macOS / Linux 常见安装路径会自动检测 | - |
 | `LIEPIN_USER_DATA_DIR` | 用户数据目录 | `~/.liepin-cli/user-data` |
 | `LIEPIN_SCREENSHOT_DIR` | 截图目录 | `~/.liepin-cli/screenshots` |
-| `LIEPIN_HEADLESS` | 是否无头模式 | `false` |
+| `RECRUIT_BROWSER_HIDDEN` | 招聘工具链共读的隐藏开关（boss-cli / liepin-cli / DSH 面板都认）；设 `false` 让窗口可见 | `true`（无头） |
+| `LIEPIN_HEADLESS` | 本 CLI 专属覆盖项，优先级高于 `RECRUIT_BROWSER_HIDDEN` | 跟随上一行 |
+| `LIEPIN_BROWSER_REMOTE_DEBUGGING_PORT` | 固定 CDP 调试端口（浏览器跨命令常驻靠它） | `53471` |
 | `LIEPIN_PROXY` | 代理服务器 | - |
 | `LIEPIN_DEBUG` | 调试模式 | `false` |
+
+### 浏览器默认看不见，怎么让它可见？
+
+**默认无头**：有头窗口一启动就抢走键盘焦点，会打断你正在做的别的事。
+
+```bash
+RECRUIT_BROWSER_HIDDEN=false liepin recommend   # 共读开关，boss / liepin / 面板都认
+LIEPIN_HEADLESS=false liepin recommend          # 只影响 liepin-cli，优先级更高
+```
+
+`liepin login` **不受影响**——扫码必须看得见，它会自己把无头实例关掉、以有头重启（登录态在
+`~/.liepin-cli/user-data` 里，不会丢）。
+
+注意：**换了变量不会让已经在跑的那只浏览器变可见**。端口上已有实例会被直接复用，得先
+`liepin quit`，下条命令才会按新模式重启。
+
+想看浏览器在做什么但不要窗口抢焦点，用 [recruiting-copilot](https://github.com/Viy1204/recruiting-copilot)
+的 DSH「招聘浏览器」面板：无头浏览器的实时画面推到 Web UI 里，能看也能点。
+
+### 浏览器跨命令常驻
+
+命令结束只断开 CDP，**不关浏览器**：下条命令直连同一只实例（同一登录态、同一标签），
+省掉反复启动的开销，DSH 面板的镜像也才有东西可连。
+
+跑完招聘想释放内存就 `liepin quit`。判断在跑的那只是什么模式：
+
+```bash
+curl http://127.0.0.1:53471/json/version   # User-Agent 含 HeadlessChrome 即无头
+```
 
 ---
 

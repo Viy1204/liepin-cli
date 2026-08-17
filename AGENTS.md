@@ -45,6 +45,34 @@ try {
 }
 ```
 
+### 浏览器默认无头且跨命令常驻（重要）
+
+浏览器**默认无头**（看不见窗口），且**命令结束只断 CDP、不关浏览器**——下条命令直连
+同一只常驻实例（同一登录态、同一标签），DSH 的「招聘浏览器」面板也靠这个才能挂上来镜像。
+
+- 占固定调试端口 **53471**（`LIEPIN_BROWSER_REMOTE_DEBUGGING_PORT` 可覆盖），boss-cli 是 53470。
+- **不要改回 `puppeteer.launch()`**：它依赖的 `@puppeteer/browsers` 会在 Node 进程 exit 时
+  kill 浏览器子进程，launch 出来的浏览器活不过一条命令，常驻和镜像都没了。必须自己
+  `spawn(detached)` + `puppeteer.connect`。
+- 关浏览器只有一个出口：`liepin quit`。别在命令路径里加 `browser.close()`。
+
+**要让浏览器可见时**（用户说"我看不到浏览器"、需要人工在真窗口里操作）：
+
+```bash
+RECRUIT_BROWSER_HIDDEN=false liepin <cmd>   # 或 LIEPIN_HEADLESS=false（优先级更高）
+```
+
+已有实例在跑时改变量**不生效**（端口上已有实例会被直接复用），要先 `liepin quit`。
+
+**判断在跑的实例是什么模式**：读 `http://127.0.0.1:53471/json/version` 的 `User-Agent`，
+含 `HeadlessChrome` 即无头（`probeRemoteHeadless()`）。**不要**用进程内变量判断——每条
+liepin 命令都是独立进程，进程内状态刚起时必然是空的。`login` 就是靠这个判据把无头实例
+关掉再以有头重启的（见 `src/cli/index.ts`）。
+
+无头下额外带 `--screen-info={0,0 1920x1080 workAreaBottom=40}`：无头虚拟屏默认 800x600 是
+已知的强自动化指纹，而 `--window-size` 抬不动它，只有 `--screen-info` 能（Chrome 142+，
+仅无头有效）。四个 workArea 参数必须分开写，写成 `workArea=` 会让 Chrome 直接启动失败。
+
 ### 浏览器操作
 
 ```typescript
@@ -81,7 +109,9 @@ await page.evaluate(async (url, body) => {
 | `LIEPIN_USER_DATA_DIR` | 用户数据目录 | `~/.liepin-cli/user-data` |
 | `LIEPIN_SCREENSHOT_DIR` | 截图目录 | `~/.liepin-cli/screenshots` |
 | `LIEPIN_CONFIG_DIR` | 配置目录 | `~/.liepin-cli` |
-| `LIEPIN_HEADLESS` | 是否无头模式 | `false` |
+| `RECRUIT_BROWSER_HIDDEN` | 招聘工具链共读的隐藏开关；`false` 让窗口可见 | `true`（无头） |
+| `LIEPIN_HEADLESS` | 本 CLI 专属覆盖项，优先级高于上一行 | 跟随上一行 |
+| `LIEPIN_BROWSER_REMOTE_DEBUGGING_PORT` | 固定 CDP 调试端口 | `53471` |
 | `LIEPIN_PROXY` | 代理服务器 | - |
 | `LIEPIN_DEBUG` | 调试模式 | `false` |
 
@@ -97,6 +127,7 @@ await page.evaluate(async (url, body) => {
 | `resume` | 查看简历详情（入参为 resume_id） |
 | `greet` | 向候选人打招呼（一键沟通，使用职位预设招呼语；入参为候选人 user_id） |
 | `joblist` | 查看职位列表 |
+| `quit` | 关掉常驻浏览器（登录态保留；`requiresPage: false`） |
 
 ## 反检测策略
 
