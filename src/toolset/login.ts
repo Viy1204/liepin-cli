@@ -1,18 +1,74 @@
 /**
  * 猎聘登录命令 - 招聘者端
+ *
+ * 登录成功的判定走「打一个需要鉴权的 BFF 接口」，不看 DOM 特征。
+ * 原因见 probeSession 注释：猎聘风控拦截页的 title 同样含"招聘"，
+ * 靠 title / class 选择器会把拦截页判成登录成功。
  */
 
 import { Page } from 'puppeteer-core';
 import { sleep } from '../common/utils.js';
+import { LIEPIN_LPT_API, lptFetch, RiskControlError } from '../common/lpt-utils.js';
 
 export interface LoginOptions {
   timeout?: number;
 }
 
+/** 探测结果：登录可用 / 未登录 / 撞上风控需人工过验证 */
+type SessionState = 'ok' | 'anonymous' | 'risk';
+
+/** 与 joblist 同一个 BFF 端点，pageSize=1 只为验鉴权，不取数据 */
+const SESSION_PROBE_URL = `${LIEPIN_LPT_API}/api/com.liepin.recruitbff.lpt.jobmanage.list`;
+
+/** 风控拦截页的可见文案，用于给用户明确的"去点验证"提示 */
+const RISK_PAGE_PATTERN = /行为异常|安全验证|请进行安全验证|点击验证/;
+
+/**
+ * 权威登录态探测。
+ *
+ * 不用 DOM 特征判断：猎聘「行为异常」风控拦截页的 document.title 同样是
+ * "专业招聘平台-猎聘"，用 title.includes('招聘') 会把拦截页当成登录成功，
+ * 于是 login 打印 ✅ 而下一条命令立刻 "LPT 请求失败: Failed to fetch"。
+ * 直接打下游命令真正依赖的鉴权接口，成功即成功，不存在误判。
+ */
+async function probeSession(page: Page): Promise<SessionState> {
+  const requestVo = {
+    keywordKind: '0',
+    keyword: '',
+    curPage: 0,
+    pageSize: 1,
+    jobListType: '0',
+    shareFlag: '2',
+  };
+  const form = new URLSearchParams();
+  form.set('requestVo', JSON.stringify(requestVo));
+
+  try {
+    const data = await lptFetch(page, SESSION_PROBE_URL, { body: form.toString() });
+    return data?.flag === 1 ? 'ok' : 'anonymous';
+  } catch (e) {
+    if (e instanceof RiskControlError) {
+      return 'risk';
+    }
+    return 'anonymous';
+  }
+}
+
+/** 读取页面状态：是否还停在登录页、是否是风控拦截页 */
+async function readPageState(page: Page): Promise<{ url: string; onLoginPage: boolean; onRiskPage: boolean }> {
+  return page
+    .evaluate((riskSource: string) => {
+      const url = window.location.href;
+      const onLoginPage = /\/login|\/signin|\/passport/.test(url);
+      const text = document.body?.innerText?.slice(0, 2000) || '';
+      return { url, onLoginPage, onRiskPage: new RegExp(riskSource).test(text) };
+    }, RISK_PAGE_PATTERN.source)
+    .catch(() => ({ url: '', onLoginPage: true, onRiskPage: false }));
+}
+
 export async function login(page: Page, options: LoginOptions): Promise<any> {
   const { timeout = 120 } = options;
 
-  // 导航到猎聘招聘者端登录页
   console.log('正在打开猎聘招聘者端...');
   await page.goto('https://lpt.liepin.com/', { waitUntil: 'networkidle2' });
   await sleep(2000);
@@ -25,70 +81,62 @@ export async function login(page: Page, options: LoginOptions): Promise<any> {
   console.log('═══════════════════════════════════════════════════════════');
   console.log('');
 
-  // 等待用户登录完成
   const startTime = Date.now();
   const timeoutMs = timeout * 1000;
-  let lastCheck = 0;
+  // 探测接口有成本，扫码期间别每 2s 打一次，避免把请求频率本身喂成风控信号
+  const PROBE_INTERVAL_MS = 5000;
+  let lastProbe = 0;
+  let riskNoticeShown = false;
+  let lastState: SessionState = 'anonymous';
 
   while (Date.now() - startTime < timeoutMs) {
-    const now = Date.now();
-    if (now - lastCheck < 2000) {
-      await sleep(500);
-      continue;
-    }
-    lastCheck = now;
-
-    const status = await page.evaluate(() => {
-      const url = window.location.href;
-      
-      // 检查是否在登录页
-      const isOnLogin = url.includes('/login') || url.includes('/signin') || url.includes('/passport');
-      
-      // 检查是否有用户信息
-      const hasUser = !!(
-        document.querySelector('.user-info') ||
-        document.querySelector('.user-name') ||
-        document.querySelector('[class*="avatar"]') ||
-        document.querySelector('[class*="userName"]') ||
-        document.querySelector('.recruiter-name') ||
-        // 检查是否有退出按钮
-        document.querySelector('a[href*="logout"]') ||
-        document.querySelector('button[class*="logout"]')
-      );
-
-      // 检查页面标题或内容
-      const pageTitle = document.title || '';
-      const hasRecruiterContent = pageTitle.includes('招聘') || 
-        !!document.querySelector('[class*="recruiter"]') ||
-        !!document.querySelector('[class*="hr-"]');
-
-      return { url, isOnLogin, hasUser, hasRecruiterContent };
-    }).catch(() => ({ url: '', isOnLogin: true, hasUser: false, hasRecruiterContent: false }));
-
-    // 检测到登录成功
-    if (!status.isOnLogin && (status.hasUser || status.hasRecruiterContent)) {
-      console.log('');
-      console.log('✅ 登录成功！');
-      console.log('   已登录猎聘招聘者端');
-      console.log('   Cookie 已保存到用户数据目录');
-      console.log('');
-      
-      return {
-        success: true,
-        message: '登录成功',
-      };
-    }
-
     const elapsed = Math.floor((Date.now() - startTime) / 1000);
     process.stdout.write(`\r  等待登录中... ${elapsed}s / ${timeout}s`);
+
+    const pageState = await readPageState(page);
+
+    if (pageState.onRiskPage && !riskNoticeShown) {
+      riskNoticeShown = true;
+      console.log('');
+      console.log('⚠️  猎聘弹出了安全验证（行为异常）');
+      console.log('   请在浏览器窗口里点「点击验证」并完成滑块，这里会继续等待。');
+      console.log('');
+    }
+
+    // 还停在登录页就没必要打接口，省一次请求
+    if (!pageState.onLoginPage && Date.now() - lastProbe >= PROBE_INTERVAL_MS) {
+      lastProbe = Date.now();
+      lastState = await probeSession(page);
+
+      if (lastState === 'ok') {
+        console.log('');
+        console.log('✅ 登录成功！');
+        console.log('   已登录猎聘招聘者端（已通过鉴权接口验证）');
+        console.log('   Cookie 已保存到用户数据目录');
+        console.log('');
+
+        return {
+          success: true,
+          message: '登录成功',
+        };
+      }
+    }
+
+    await sleep(1000);
   }
 
   console.log('');
-  console.log('❌ 登录超时，请重试');
-  
+  if (lastState === 'risk' || riskNoticeShown) {
+    console.log('❌ 登录未完成：卡在猎聘安全验证上');
+    console.log('   在浏览器里点「点击验证」过掉滑块，再用更长的窗口重试：');
+    console.log('   liepin login --timeout 600');
+  } else {
+    console.log('❌ 登录超时，请重试');
+  }
+
   return {
     success: false,
-    message: '登录超时',
+    message: lastState === 'risk' || riskNoticeShown ? '卡在猎聘安全验证，登录未完成' : '登录超时',
   };
 }
 
