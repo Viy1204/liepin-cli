@@ -11,3 +11,4 @@ export * from './talent.js';
 export * from './resume.js';
 export * from './greet.js';
 export * from './joblist.js';
+export * from './quit.js';

@@ -7,7 +7,7 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { config } from '../config.js';
-import { CdpBrowser } from '../browser/cdp_browser.js';
+import { CdpBrowser, closeRemoteBrowser, probeRemoteHeadless } from '../browser/cdp_browser.js';
 import { loginCommand } from '../toolset/login.js';
 import { searchCommand } from '../toolset/search.js';
 import { chatlistCommand } from '../toolset/chatlist.js';
@@ -18,6 +18,7 @@ import { resumeCommand } from '../toolset/resume.js';
 import { greetCommand } from '../toolset/greet.js';
 import { joblistCommand } from '../toolset/joblist.js';
 import { skillCommand } from '../toolset/skill.js';
+import { quitCommand } from '../toolset/quit.js';
 
 /** 从包根 package.json 读取版本号（dist/cli/index.js -> ../../package.json） */
 const pkg = JSON.parse(
@@ -57,6 +58,7 @@ const commands: Command[] = [
   greetCommand,
   joblistCommand,
   skillCommand,
+  quitCommand,
 ];
 
 /** 显示帮助信息 */
@@ -226,7 +228,18 @@ async function main(): Promise<void> {
 
   const requiresPage = cmd.requiresPage !== false;
 
-  // 启动浏览器
+  // 登录必须可见：扫码看不见就没法登录。已在跑的实例若是无头，先关掉，再以有头拉起。
+  // 判据读的是端口上那只浏览器自己（/json/version 的 UA），不是进程内变量——每条
+  // liepin 命令都是独立进程，进程内状态刚起时必然是空的，靠它判断等于不判断。
+  // 登录态在 user-data-dir 里，关掉重启不会丢。
+  if (command === 'login') {
+    process.env.LIEPIN_HEADLESS = 'false';
+    if ((await probeRemoteHeadless()) === true) {
+      await closeRemoteBrowser();
+    }
+  }
+
+  // 连上浏览器（端口上已有实例就复用，没有才拉起）
   const browser = requiresPage ? new CdpBrowser() : null;
   let page: any = null;
 
@@ -244,10 +257,9 @@ async function main(): Promise<void> {
     console.error('错误:', error instanceof Error ? error.message : String(error));
     process.exit(1);
   } finally {
-    // 关闭浏览器
-    if (browser) {
-      await browser.close();
-    }
+    // 只断 CDP，不关浏览器：跨命令常驻，下条命令直连同一只实例（同一登录态），
+    // DSH 面板的镜像也才有东西可连。要真正关掉用 `liepin quit`。
+    browser?.disconnect();
   }
 }
 
