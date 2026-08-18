@@ -19,6 +19,7 @@ import { greetCommand } from '../toolset/greet.js';
 import { joblistCommand } from '../toolset/joblist.js';
 import { skillCommand } from '../toolset/skill.js';
 import { quitCommand } from '../toolset/quit.js';
+import { acquireBusyLock, releaseBusyLock } from '../common/busy_lock.js';
 
 /** 从包根 package.json 读取版本号（dist/cli/index.js -> ../../package.json） */
 const pkg = JSON.parse(
@@ -239,6 +240,10 @@ async function main(): Promise<void> {
     }
   }
 
+  // 告诉面板「这条命令正在操作这只浏览器」：面板切换有头/无头要关掉浏览器重开，
+  // 会打断我们，所以它需要一个能看见的信号（见 common/busy_lock.ts）。
+  acquireBusyLock(command);
+
   // 连上浏览器（端口上已有实例就复用，没有才拉起）
   const browser = requiresPage ? new CdpBrowser() : null;
   let page: any = null;
@@ -260,6 +265,7 @@ async function main(): Promise<void> {
     // 只断 CDP，不关浏览器：跨命令常驻，下条命令直连同一只实例（同一登录态），
     // DSH 面板的镜像也才有东西可连。要真正关掉用 `liepin quit`。
     browser?.disconnect();
+    releaseBusyLock();
   }
 }
 
