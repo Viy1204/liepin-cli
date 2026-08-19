@@ -144,37 +144,42 @@ liepin skill uninstall
 | `CHROME_PATH` | Chrome/Edge 可执行文件路径；Windows / macOS / Linux 常见安装路径会自动检测 | - |
 | `LIEPIN_USER_DATA_DIR` | 用户数据目录 | `~/.liepin-cli/user-data` |
 | `LIEPIN_SCREENSHOT_DIR` | 截图目录 | `~/.liepin-cli/screenshots` |
-| `RECRUIT_BROWSER_HIDDEN` | 招聘工具链共读的隐藏开关（boss-cli / liepin-cli / DSH 面板都认）；设 `true` 才无头，**有账号风险，见下方** | `false`（有头） |
+| `RECRUIT_BROWSER_HIDDEN` | 招聘工具链共读的**统一覆盖**开关（boss-cli / liepin-cli / DSH 面板都认）；设 `false` 让窗口可见。不设时各 CLI 用自己的默认 | 不设（猎聘默认无头） |
 | `LIEPIN_HEADLESS` | 本 CLI 专属覆盖项，优先级高于 `RECRUIT_BROWSER_HIDDEN` | 跟随上一行 |
 | `LIEPIN_BROWSER_REMOTE_DEBUGGING_PORT` | 固定 CDP 调试端口（浏览器跨命令常驻靠它） | `53471` |
 | `LIEPIN_PROXY` | 代理服务器 | - |
 | `LIEPIN_DEBUG` | 调试模式 | `false` |
 
-### 浏览器是有头还是无头？
+### 浏览器默认看不见，怎么让它可见？
 
-**默认有头**（真窗口）。代价是窗口启动时会抢一次键盘焦点。
-
-**2026-08-19 把默认从无头翻回有头**：`RECRUIT_BROWSER_HIDDEN` 是 boss / liepin / DSH 面板
-三方共读的，语义必须一致。BOSS 侧已观测到两起账号事故都指向无头（一个账号被限制 web 端登录，
-文案写明「检测到使用第三方招聘管理系统、插件、外挂、软件等辅助工具」）。**猎聘的风控形态一次
-都没观测过**，所以这不是「猎聘也会封」的结论，而是无头 Chrome 自报 `HeadlessChrome/<ver>`
-这个已知的强指纹不值得留在默认路径上。
-
-真要无头（清楚这是在拿账号冒险）：
+**猎聘默认无头**：有头窗口一启动就抢走键盘焦点，会打断你正在做的别的事。
 
 ```bash
-RECRUIT_BROWSER_HIDDEN=true liepin recommend   # 共读开关，boss / liepin / 面板都认
-LIEPIN_HEADLESS=true liepin recommend          # 只影响 liepin-cli，优先级更高
+RECRUIT_BROWSER_HIDDEN=false liepin recommend   # 共读开关，boss / liepin / 面板都认
+LIEPIN_HEADLESS=false liepin recommend          # 只影响 liepin-cli，优先级更高
 ```
 
-`liepin login` **一直是有头的**——扫码必须看得见。真开了无头，它也会自己把无头实例关掉、
-以有头重启（登录态在 `~/.liepin-cli/user-data` 里，不会丢）。
+`liepin login` **不受影响**——扫码必须看得见，它会自己把无头实例关掉、以有头重启（登录态在
+`~/.liepin-cli/user-data` 里，不会丢）。
 
-注意：**换了变量不会让已经在跑的那只浏览器切换模式**。端口上已有实例会被直接复用，得先
+注意：**换了变量不会让已经在跑的那只浏览器变可见**。端口上已有实例会被直接复用，得先
 `liepin quit`，下条命令才会按新模式重启。
 
-想在不切窗口的前提下看浏览器在做什么，用 [recruiting-copilot](https://github.com/Viy1204/recruiting-copilot)
+想看浏览器在做什么但不要窗口抢焦点，用 [recruiting-copilot](https://github.com/Viy1204/recruiting-copilot)
 的 DSH「招聘浏览器」面板（默认折叠、默认只读，操作请走 CLI）。
+
+#### 为什么 boss-cli 默认有头、猎聘默认无头（2026-08-19）
+
+按证据分别定的，不强求一致：
+
+- **BOSS 默认有头**：已实测两起账号事故都指向无头——一个账号被限制 **web 端登录 24 小时**，
+  页面文案明确写「系统检测到您的账号存在使用第三方招聘管理系统、插件、外挂、软件等辅助工具」；
+  另一个团队用上游 boss-cli（默认有头）长期无事，他们的 AI 擅自改走无头之后当天封号。
+- **猎聘保持无头**：猎聘的风控形态**一次都没观测过**，没有证据支持翻默认，而不抢键盘焦点
+  是实打实的好处。观测到同类症状再改。
+
+所以 `RECRUIT_BROWSER_HIDDEN` 的语义是**统一覆盖开关**，而不是「提供默认值」：不设时两个 CLI
+各用自己的默认，显式设了才把两家拉平。想一次把两边都摆到有头就 `RECRUIT_BROWSER_HIDDEN=false`。
 
 ### 浏览器跨命令常驻
 

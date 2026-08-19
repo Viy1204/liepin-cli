@@ -42,26 +42,28 @@ const LAUNCH_READY_MS = 30_000;
 /**
  * 是否以无头（隐藏）方式启动。
  *
- * 优先级：`LIEPIN_HEADLESS`（本 CLI 专属，显式覆盖）> `RECRUIT_BROWSER_HIDDEN`
- * （招聘工具链共读的单一来源）> 默认 **false（有头）**。
+ * 优先级：`LIEPIN_HEADLESS`（本 CLI 专属）> `RECRUIT_BROWSER_HIDDEN`（招聘工具链共读的
+ * 统一覆盖开关，**只在显式设置时生效**）> **猎聘自己的默认：无头**。
  *
- * **2026-08-19：默认从无头翻回有头**，与 boss-cli 同步（`RECRUIT_BROWSER_HIDDEN`
- * 是三方共读的，语义必须一致，否则一条命令有头、一条无头更糟）。
+ * **两家默认不同，这是按证据定的（2026-08-19）**：
  *
- * 原先默认无头是为了不抢键盘焦点，代价评估为「UA 里多个 `HeadlessChrome`，没有观测到
- * 实际危害」。BOSS 侧已经观测到危害：一个账号被限制 web 端登录，文案明确写「检测到使用
- * 第三方招聘管理系统、插件、外挂、软件等辅助工具」；另一团队默认有头长期无事、改走无头
- * 当天封号。**猎聘的风控形态一次都没观测过**，所以这里不是「猎聘也会封」的结论，而是
- * 共读变量必须同语义 + 无头这个已知的强指纹不值得留在默认路径上。
+ * - BOSS 侧默认**有头**——已实测两起账号事故都指向无头：一个账号被限制 web 端登录，
+ *   页面文案明确写「检测到使用第三方招聘管理系统、插件、外挂、软件等辅助工具」；
+ *   另一团队用上游版（默认有头）长期无事、AI 擅自改走无头当天封号。
+ * - 猎聘侧保持**无头**——猎聘的风控形态**一次都没观测过**，没有证据支持翻默认，
+ *   而无头带来的「不抢键盘焦点」是实打实的好处。观测到同类症状再改。
  *
- * 想看浏览器在做什么但不要真窗口，用 DSH 的「招聘浏览器」面板（默认折叠只读）。
+ * 所以 `RECRUIT_BROWSER_HIDDEN` 的语义是「统一覆盖」而不是「提供默认值」：不设时两个
+ * CLI 各用自己的默认，显式设了才拉平。想一次把两家都摆到同一模式，就显式设它。
  */
 export function resolveHeadlessFromEnv(): boolean {
   const own = process.env.LIEPIN_HEADLESS?.trim().toLowerCase();
   if (own === 'true' || own === '1' || own === 'yes' || own === 'y') return true;
   if (own === 'false' || own === '0' || own === 'no' || own === 'n') return false;
   const shared = process.env.RECRUIT_BROWSER_HIDDEN?.trim().toLowerCase();
-  return shared === 'true' || shared === '1' || shared === 'yes' || shared === 'y';
+  if (shared === 'true' || shared === '1' || shared === 'yes' || shared === 'y') return true;
+  if (shared === 'false' || shared === '0' || shared === 'no' || shared === 'n') return false;
+  return true;
 }
 
 /**

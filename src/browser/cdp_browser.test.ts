@@ -26,20 +26,21 @@ function withEnv(vars: Record<string, string>, fn: () => void): void {
   }
 }
 
-test('默认有头：与 boss-cli 同语义，无头那个已知强指纹不留在默认路径上', () => {
-  withEnv({}, () => assert.equal(resolveHeadlessFromEnv(), false));
+test('默认无头：猎聘的风控形态一次都没观测过，没有证据支持翻默认', () => {
+  withEnv({}, () => assert.equal(resolveHeadlessFromEnv(), true));
 });
 
-test('无头必须显式开启，各种真值写法都认', () => {
+test('共读变量是统一覆盖开关，不设时用猎聘自己的默认（无头）', () => {
   for (const v of ['true', 'TRUE', '1', 'yes', 'y']) {
     withEnv({ RECRUIT_BROWSER_HIDDEN: v }, () => assert.equal(resolveHeadlessFromEnv(), true));
   }
-});
-
-test('共读变量给假值或无意义值都保持有头', () => {
-  withEnv({ RECRUIT_BROWSER_HIDDEN: 'false' }, () => assert.equal(resolveHeadlessFromEnv(), false));
-  withEnv({ RECRUIT_BROWSER_HIDDEN: 'FALSE' }, () => assert.equal(resolveHeadlessFromEnv(), false));
-  withEnv({ RECRUIT_BROWSER_HIDDEN: 'maybe' }, () => assert.equal(resolveHeadlessFromEnv(), false));
+  // 显式给假值才拉到有头——boss 那边默认就是有头，这样两家能一次摆平
+  for (const v of ['false', 'FALSE', '0', 'no', 'n']) {
+    withEnv({ RECRUIT_BROWSER_HIDDEN: v }, () => assert.equal(resolveHeadlessFromEnv(), false));
+  }
+  // 无意义值不当覆盖，回落到猎聘默认
+  withEnv({ RECRUIT_BROWSER_HIDDEN: 'maybe' }, () => assert.equal(resolveHeadlessFromEnv(), true));
+  withEnv({ RECRUIT_BROWSER_HIDDEN: '' }, () => assert.equal(resolveHeadlessFromEnv(), true));
 });
 
 test('LIEPIN_HEADLESS 优先级高于共读变量，两个方向都生效', () => {
