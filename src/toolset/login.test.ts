@@ -80,3 +80,12 @@ test('login: 还停在登录页时不打鉴权接口，避免请求频率喂风�
   assert.equal(result.success, false);
   assert.equal(probes(), 0);
 });
+
+test('login: 等待期间页面被清空为 about:blank 时立即抛 RiskControlError，不再干等', async () => {
+  const { page } = fakePage({ url: 'about:blank', apiText: ANONYMOUS });
+
+  await assert.rejects(
+    () => login(page, { timeout: 3 }),
+    (e: any) => e.name === 'RiskControlError' && /about:blank/.test(e.message),
+  );
+});

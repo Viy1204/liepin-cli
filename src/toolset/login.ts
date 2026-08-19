@@ -8,7 +8,7 @@
 
 import { Page } from 'puppeteer-core';
 import { sleep } from '../common/utils.js';
-import { LIEPIN_LPT_API, lptFetch, RiskControlError } from '../common/lpt-utils.js';
+import { LIEPIN_LPT_API, lptFetch, RiskControlError, assertLptPageAlive } from '../common/lpt-utils.js';
 
 export interface LoginOptions {
   timeout?: number;
@@ -92,6 +92,10 @@ export async function login(page: Page, options: LoginOptions): Promise<any> {
   while (Date.now() - startTime < timeoutMs) {
     const elapsed = Math.floor((Date.now() - startTime) / 1000);
     process.stdout.write(`\r  等待登录中... ${elapsed}s / ${timeout}s`);
+
+    // 风控验证页可以等人工点验证，但页面被安全脚本清空成 about:blank 等不出
+    // 任何结果——立即失败（退出码 3），别让用户对着空白页干等到超时（issue #17）
+    assertLptPageAlive(page, '等待登录');
 
     const pageState = await readPageState(page);
 
