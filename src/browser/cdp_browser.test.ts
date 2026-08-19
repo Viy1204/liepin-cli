@@ -26,13 +26,20 @@ function withEnv(vars: Record<string, string>, fn: () => void): void {
   }
 }
 
-test('默认无头：有头窗口会抢键盘焦点，打断用户手上的事', () => {
-  withEnv({}, () => assert.equal(resolveHeadlessFromEnv(), true));
+test('默认有头：与 boss-cli 同语义，无头那个已知强指纹不留在默认路径上', () => {
+  withEnv({}, () => assert.equal(resolveHeadlessFromEnv(), false));
 });
 
-test('RECRUIT_BROWSER_HIDDEN=false 退回有头', () => {
+test('无头必须显式开启，各种真值写法都认', () => {
+  for (const v of ['true', 'TRUE', '1', 'yes', 'y']) {
+    withEnv({ RECRUIT_BROWSER_HIDDEN: v }, () => assert.equal(resolveHeadlessFromEnv(), true));
+  }
+});
+
+test('共读变量给假值或无意义值都保持有头', () => {
   withEnv({ RECRUIT_BROWSER_HIDDEN: 'false' }, () => assert.equal(resolveHeadlessFromEnv(), false));
   withEnv({ RECRUIT_BROWSER_HIDDEN: 'FALSE' }, () => assert.equal(resolveHeadlessFromEnv(), false));
+  withEnv({ RECRUIT_BROWSER_HIDDEN: 'maybe' }, () => assert.equal(resolveHeadlessFromEnv(), false));
 });
 
 test('LIEPIN_HEADLESS 优先级高于共读变量，两个方向都生效', () => {
