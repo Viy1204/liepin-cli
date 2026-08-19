@@ -42,6 +42,7 @@ interface Command {
     header: string;
     key: string;
     width: number;
+    noTruncate?: boolean;
   }>;
   requiresPage?: boolean;
   func: (page: any, options: any) => Promise<any>;
@@ -132,7 +133,7 @@ function parseArgs(args: string[]): { command: string; options: Record<string, a
 /** 格式化输出 */
 function formatOutput(
   data: any,
-  columns: Array<{ header: string; key: string; width: number }>,
+  columns: Array<{ header: string; key: string; width: number; noTruncate?: boolean }>,
   asJson: boolean = false,
 ): void {
   if (asJson) {
@@ -149,6 +150,8 @@ function formatOutput(
     for (const item of data) {
       const row = columns.map(col => {
         const value = String(item[col.key] || '');
+        // ID 类标识符截断后无法直接喂给下游命令，只补齐不截断（issue #14）
+        if (col.noTruncate) return value.padEnd(col.width);
         return value.length > col.width ? value.slice(0, col.width - 3) + '...' : value.padEnd(col.width);
       }).join(' | ');
       console.log(row);

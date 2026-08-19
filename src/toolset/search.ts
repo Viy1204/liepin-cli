@@ -178,7 +178,9 @@ export function mapJobCard(item: any, rank: number) {
     name: item.resName || '',
     title: item.wantJobTitle || latestWork.title || '',
     salary: item.wantSalary || '',
-    city: item.wantDq || item.resDqName || '',
+    // --city 过滤的是现居住地（dqs），显示也必须以现居为准，否则会像"过滤不生效"（issue #13）
+    city: item.resDqName || item.wantDq || '',
+    want_city: item.wantDq || '',
     experience: item.workYearsShow || '',
     degree: item.resEdulevelName || latestEdu.eduDegreeName || '',
     company: latestWork.compName || '',
@@ -278,12 +280,12 @@ export const SEARCH_COLUMNS = [
   { header: '候选人', key: 'name', width: 10 },
   { header: '期望职位', key: 'title', width: 24 },
   { header: '薪资', key: 'salary', width: 15 },
-  { header: '城市', key: 'city', width: 10 },
+  { header: '现居城市', key: 'city', width: 10 },
   { header: '经验', key: 'experience', width: 10 },
   { header: '学历', key: 'degree', width: 10 },
   { header: '当前公司', key: 'company', width: 18 },
   { header: '当前职位', key: 'current_title', width: 18 },
-  { header: '简历ID', key: 'resume_id', width: 18 },
+  { header: '简历ID', key: 'resume_id', width: 23, noTruncate: true },
 ];
 
 /** 搜索命令定义 */
@@ -292,7 +294,7 @@ export const searchCommand = {
   description: '搜索人才（招聘者端）',
   args: [
     { name: 'query', type: 'string', required: true, positional: true, help: '搜索关键词（岗位名 / 技能 / 公司）' },
-    { name: 'city', type: 'string', default: '全国', help: '城市名或代码（如 "北京" / "杭州" / "410"）' },
+    { name: 'city', type: 'string', default: '全国', help: '城市名或代码（如 "北京" / "杭州" / "410"），按候选人现居住地过滤；期望城市见输出的 want_city' },
     { name: 'experience', type: 'string', default: '', help: '工作经验：应届/1-3年/3-5年/5-10年/10年以上' },
     { name: 'salary', type: 'string', default: '', help: '月薪范围：3K以下/3-5K/5-10K/10-15K/15-20K/20-30K/30-50K/50K以上' },
     { name: 'degree', type: 'string', default: '', help: '学历：大专/本科/硕士/博士' },

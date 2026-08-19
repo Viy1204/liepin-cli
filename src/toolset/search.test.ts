@@ -161,3 +161,9 @@ test('mapJobCard: 空对象不抛错并返回空字符串字段', () => {
   assert.equal(result.city, '');
   assert.equal(result.resume_id, '');
 });
+
+test('mapJobCard: city 以现居住地为准（--city 过滤的是 dqs），期望城市单列 want_city', () => {
+  const result = mapJobCard({ resDqName: '深圳', wantDq: '广州' }, 1);
+  assert.equal(result.city, '深圳');
+  assert.equal(result.want_city, '广州');
+});
