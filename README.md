@@ -144,7 +144,7 @@ liepin skill uninstall
 | `CHROME_PATH` | Chrome/Edge 可执行文件路径；Windows / macOS / Linux 常见安装路径会自动检测 | - |
 | `LIEPIN_USER_DATA_DIR` | 用户数据目录 | `~/.liepin-cli/user-data` |
 | `LIEPIN_SCREENSHOT_DIR` | 截图目录 | `~/.liepin-cli/screenshots` |
-| `RECRUIT_BROWSER_HIDDEN` | 招聘工具链共读的隐藏开关（boss-cli / liepin-cli / DSH 面板都认）；设 `false` 让窗口可见 | `true`（无头） |
+| `RECRUIT_BROWSER_HIDDEN` | 招聘工具链共读的隐藏开关（boss-cli / liepin-cli / DSH 面板都认）；设 `true` 才无头，**有账号风险，见下方** | `false`（有头） |
 | `LIEPIN_HEADLESS` | 本 CLI 专属覆盖项，优先级高于 `RECRUIT_BROWSER_HIDDEN` | 跟随上一行 |
 | `LIEPIN_BROWSER_REMOTE_DEBUGGING_PORT` | 固定 CDP 调试端口（浏览器跨命令常驻靠它） | `53471` |
 | `LIEPIN_PROXY` | 代理服务器 | - |
