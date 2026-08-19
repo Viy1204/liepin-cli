@@ -15,6 +15,7 @@ function fakePage(opts: { url: string; bodyText?: string; apiText: string }) {
 
   const page: any = {
     goto: async () => {},
+    url: () => url,
     evaluate: async (_fn: any, ...args: any[]) => {
       if (args.length === 4) {
         probeCount += 1;

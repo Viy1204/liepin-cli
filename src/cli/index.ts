@@ -263,7 +263,10 @@ async function main(): Promise<void> {
     formatOutput(result, cmd.columns, options.json === true);
   } catch (error) {
     console.error('错误:', error instanceof Error ? error.message : String(error));
-    process.exit(1);
+    // 让调用方（脚本 / AI Agent）无需解析文案即可判别错误类别：
+    // 2 = 登录态失效（AuthExpiredError），3 = 风控/安全异常（RiskControlError）
+    const name = error instanceof Error ? error.name : '';
+    process.exit(name === 'AuthExpiredError' ? 2 : name === 'RiskControlError' ? 3 : 1);
   } finally {
     // 只断 CDP，不关浏览器：跨命令常驻，下条命令直连同一只实例（同一登录态），
     // DSH 面板的镜像也才有东西可连。要真正关掉用 `liepin quit`。
