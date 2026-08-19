@@ -122,14 +122,18 @@ export CHROME_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome
 2. 检查网络连接
 3. 尝试手动登录后再使用 CLI
 
+### 提示「检测到您当前网络地址在境外」
+猎聘封境外 IP。先关闭 VPN / 代理（含 Outline、Clash TUN 模式等整机隧道），或将
+`*.liepin.com` 分流为直连后重跑命令。**不要**为了"防检测"挂代理——代理正是被封主因。
+
 ### 被检测为自动化
 - 增加操作间隔
-- 使用代理
 - 减少操作频率
+- 页面被清空为 about:blank 是 0.2.4 之前版本的已知问题（加载期 Runtime 检测），升级即修复
 
 ## 项目位置
 
-源代码：`/tmp/liepin-cli/`
+源代码：`https://github.com/Viy1204/liepin-cli`
 
 ## 相关命令
 

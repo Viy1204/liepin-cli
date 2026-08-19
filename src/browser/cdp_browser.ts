@@ -14,6 +14,7 @@
 import { spawn } from 'node:child_process';
 import puppeteer, { Browser, Page } from 'puppeteer-core';
 import { config } from '../config.js';
+import { safeGoto } from '../common/lpt-utils.js';
 
 export interface BrowserOptions {
   headless?: boolean;
@@ -50,8 +51,9 @@ const LAUNCH_READY_MS = 30_000;
  * - BOSS 侧默认**有头**——已实测两起账号事故都指向无头：一个账号被限制 web 端登录，
  *   页面文案明确写「检测到使用第三方招聘管理系统、插件、外挂、软件等辅助工具」；
  *   另一团队用上游版（默认有头）长期无事、AI 擅自改走无头当天封号。
- * - 猎聘侧保持**无头**——猎聘的风控形态**一次都没观测过**，没有证据支持翻默认，
- *   而无头带来的「不抢键盘焦点」是实打实的好处。观测到同类症状再改。
+ * - 猎聘侧保持**无头**——风控与有头/无头无关：已实测其安全脚本在页面加载瞬间检测
+ *   CDP 会话的 Runtime 域，启用则清页（2026-08-19 有头模式复现），由 safeGoto 规避；
+ *   而无头带来的「不抢键盘焦点」是实打实的好处。
  *
  * 所以 `RECRUIT_BROWSER_HIDDEN` 的语义是「统一覆盖」而不是「提供默认值」：不设时两个
  * CLI 各用自己的默认，显式设了才拉平。想一次把两家都摆到同一模式，就显式设它。
@@ -248,10 +250,10 @@ export class CdpBrowser {
     return this.page;
   }
 
-  /** 导航到指定 URL */
-  async navigate(url: string, options?: { waitUntil?: 'load' | 'domcontentloaded' | 'networkidle0' | 'networkidle2' }): Promise<void> {
+  /** 导航到指定 URL（走 safeGoto 规避猎聘加载期 CDP 检测） */
+  async navigate(url: string): Promise<void> {
     const page = await this.getPage();
-    await page.goto(url, { waitUntil: options?.waitUntil || 'networkidle2' });
+    await safeGoto(page, url);
   }
 
   /**

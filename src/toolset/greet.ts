@@ -11,7 +11,7 @@
  */
 
 import { Page } from 'puppeteer-core';
-import { LIEPIN_LPT_API, lptFetch, navigateToLpt, readLptImId } from '../common/lpt-utils.js';
+import { LIEPIN_LPT_API, lptFetch, navigateToLpt, readLptImId, safeGoto } from '../common/lpt-utils.js';
 import { sleepRandom } from '../common/utils.js';
 
 export interface GreetOptions {
@@ -130,9 +130,7 @@ async function verifyMessageSent(page: Page, oppositeImId: string, message: stri
 }
 
 async function sendMessageInIm(page: Page, resumeId: string, oppositeImId: string, message: string): Promise<void> {
-  await page.goto(`https://lpt.liepin.com/resume/detail?resIdEncode=${encodeURIComponent(resumeId)}&sfrom=R_SEARCH_CONDITION`, {
-    waitUntil: 'networkidle2',
-  });
+  await safeGoto(page, `https://lpt.liepin.com/resume/detail?resIdEncode=${encodeURIComponent(resumeId)}&sfrom=R_SEARCH_CONDITION`);
   await page.waitForSelector('.xpath-open-im-btn', { timeout: 20000 });
   await page.click('.xpath-open-im-btn');
   await page.waitForSelector('.im-ui-textarea', { timeout: 20000 });

@@ -117,7 +117,7 @@ liepin-cli 的每条命令都输出结构化纯文本，AI Agent 可直接解析
 
 ```bash
 # Agent 调用示例
-result=$(liepin search 前端工程师 --city 北京 --limit 5)
+result=$(liepin search 前端工程师 --city 北京 --limit 5 --json)
 echo "$result" | jq '.[0].title'
 ```
 
@@ -126,10 +126,9 @@ echo "$result" | jq '.[0].title'
 ```bash
 # 把 liepin-cli 注册为 Agent Skill
 liepin skill install
-
-# 卸载
-liepin skill uninstall
 ```
+
+卸载目前不支持子命令，手动删除目录即可：`rm -rf ~/.agents/skills/liepin-cli`。
 
 安装后**默认复制到 `~/.agents/skills/liepin-cli/`**（Windows：`%USERPROFILE%\.agents\skills\liepin-cli`）。重启 Claude Code 后，在对话中说"用 liepin 搜前端"即可触发。
 
@@ -175,8 +174,10 @@ LIEPIN_HEADLESS=false liepin recommend          # 只影响 liepin-cli，优先�
 - **BOSS 默认有头**：已实测两起账号事故都指向无头——一个账号被限制 **web 端登录 24 小时**，
   页面文案明确写「系统检测到您的账号存在使用第三方招聘管理系统、插件、外挂、软件等辅助工具」；
   另一个团队用上游 boss-cli（默认有头）长期无事，他们的 AI 擅自改走无头之后当天封号。
-- **猎聘保持无头**：猎聘的风控形态**一次都没观测过**，没有证据支持翻默认，而不抢键盘焦点
-  是实打实的好处。观测到同类症状再改。
+- **猎聘保持无头**：风控与有头/无头无关——已实测猎聘安全脚本在**页面加载瞬间**检测
+  该页签的 CDP 会话是否启用着 Runtime 域，启用则把页面清成 about:blank（2026-08-19，
+  有头模式 100% 复现）；`safeGoto` 在导航期间临时关闭 Runtime 规避。无头「不抢键盘焦点」
+  仍是实打实的好处。
 
 所以 `RECRUIT_BROWSER_HIDDEN` 的语义是**统一覆盖开关**，而不是「提供默认值」：不设时两个 CLI
 各用自己的默认，显式设了才把两家拉平。想一次把两边都摆到有头就 `RECRUIT_BROWSER_HIDDEN=false`。
@@ -212,6 +213,16 @@ $env:CHROME_PATH="C:\Program Files\Google\Chrome\Application\chrome.exe"
 1. 重新跑 `liepin login`，在弹出的浏览器里扫码登录招聘者端
 2. 确认 `LIEPIN_USER_DATA_DIR` 目录正确（cookie 持久化在此）
 3. 命令报"返回了 HTML / 反爬挑战"多为登录态过期，重新 `liepin login` 即可
+
+### 提示「检测到您当前网络地址在境外」
+
+猎聘封境外 IP。**先关 VPN / 代理**（含 Outline、Clash TUN 模式这类整机隧道），或将
+`*.liepin.com` 分流为直连，再重跑命令。用 VPN 期间即使能扫码登录，BFF 接口也会拦截。
+
+### 页面被清空为 about:blank
+
+0.2.4 起已根治：猎聘安全脚本会在页面加载瞬间检测 CDP 会话的 Runtime 域并清页，
+现在所有导航在加载期间临时关闭 Runtime（`safeGoto`）。旧版本遇到请升级。
 
 ### 被检测为自动化
 

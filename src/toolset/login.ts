@@ -8,7 +8,7 @@
 
 import { Page } from 'puppeteer-core';
 import { sleep } from '../common/utils.js';
-import { LIEPIN_LPT_API, lptFetch, RiskControlError, assertLptPageAlive } from '../common/lpt-utils.js';
+import { LIEPIN_LPT_API, lptFetch, RiskControlError, assertLptPageAlive, safeGoto, setPageRuntime } from '../common/lpt-utils.js';
 
 export interface LoginOptions {
   timeout?: number;
@@ -19,9 +19,6 @@ type SessionState = 'ok' | 'anonymous' | 'risk';
 
 /** 与 joblist 同一个 BFF 端点，pageSize=1 只为验鉴权，不取数据 */
 const SESSION_PROBE_URL = `${LIEPIN_LPT_API}/api/com.liepin.recruitbff.lpt.jobmanage.list`;
-
-/** 风控拦截页的可见文案，用于给用户明确的"去点验证"提示 */
-const RISK_PAGE_PATTERN = /行为异常|安全验证|请进行安全验证|点击验证/;
 
 /**
  * 权威登录态探测。
@@ -54,23 +51,16 @@ async function probeSession(page: Page): Promise<SessionState> {
   }
 }
 
-/** 读取页面状态：是否还停在登录页、是否是风控拦截页 */
-async function readPageState(page: Page): Promise<{ url: string; onLoginPage: boolean; onRiskPage: boolean }> {
-  return page
-    .evaluate((riskSource: string) => {
-      const url = window.location.href;
-      const onLoginPage = /\/login|\/signin|\/passport/.test(url);
-      const text = document.body?.innerText?.slice(0, 2000) || '';
-      return { url, onLoginPage, onRiskPage: new RegExp(riskSource).test(text) };
-    }, RISK_PAGE_PATTERN.source)
-    .catch(() => ({ url: '', onLoginPage: true, onRiskPage: false }));
+/** 是否还停在登录页：只看 URL。等待期间 Runtime 是关闭的，不能 evaluate 读 DOM */
+function onLoginPage(page: Page): boolean {
+  return /\/login|\/signin|\/passport/.test(page.url());
 }
 
 export async function login(page: Page, options: LoginOptions): Promise<any> {
   const { timeout = 120 } = options;
 
   console.log('正在打开猎聘招聘者端...');
-  await page.goto('https://lpt.liepin.com/', { waitUntil: 'networkidle2' });
+  await safeGoto(page, 'https://lpt.liepin.com/');
   await sleep(2000);
 
   console.log('');
@@ -80,6 +70,11 @@ export async function login(page: Page, options: LoginOptions): Promise<any> {
   console.log('  登录成功后会自动检测');
   console.log('═══════════════════════════════════════════════════════════');
   console.log('');
+
+  // 等待扫码期间保持 Runtime 关闭：扫码成功后的跳转是一次新页面加载，
+  // 此时若 Runtime 开着会被安全脚本清页（与 issue #17 同一机制，见 safeGoto）。
+  // 只在探测登录态时短暂打开，探完立即关闭。
+  await setPageRuntime(page, false);
 
   const startTime = Date.now();
   const timeoutMs = timeout * 1000;
@@ -97,20 +92,24 @@ export async function login(page: Page, options: LoginOptions): Promise<any> {
     // 任何结果——立即失败（退出码 3），别让用户对着空白页干等到超时（issue #17）
     assertLptPageAlive(page, '等待登录');
 
-    const pageState = await readPageState(page);
-
-    if (pageState.onRiskPage && !riskNoticeShown) {
-      riskNoticeShown = true;
-      console.log('');
-      console.log('⚠️  猎聘弹出了安全验证（行为异常）');
-      console.log('   请在浏览器窗口里点「点击验证」并完成滑块，这里会继续等待。');
-      console.log('');
-    }
-
     // 还停在登录页就没必要打接口，省一次请求
-    if (!pageState.onLoginPage && Date.now() - lastProbe >= PROBE_INTERVAL_MS) {
+    if (!onLoginPage(page) && Date.now() - lastProbe >= PROBE_INTERVAL_MS) {
       lastProbe = Date.now();
-      lastState = await probeSession(page);
+      await setPageRuntime(page, true);
+      try {
+        await sleep(300); // 等 Runtime.enable 回放执行上下文，evaluate 才有 context 可用
+        lastState = await probeSession(page);
+      } finally {
+        await setPageRuntime(page, false);
+      }
+
+      if (lastState === 'risk' && !riskNoticeShown) {
+        riskNoticeShown = true;
+        console.log('');
+        console.log('⚠️  猎聘弹出了安全验证（行为异常）');
+        console.log('   请在浏览器窗口里点「点击验证」并完成滑块，这里会继续等待。');
+        console.log('');
+      }
 
       if (lastState === 'ok') {
         console.log('');

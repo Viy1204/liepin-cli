@@ -25,10 +25,58 @@ const RISK_CONTROL_PATTERN = /验证码|安全验证|请完成验证|操作(过�
 export { AuthExpiredError, RELOGIN_HINT, isAuthExpiredResponse } from './utils.js';
 
 const PAGE_BLANKED_HINT =
-  '猎聘招聘者端的安全脚本在检测到 CDP/DevTools 调试连接后可能主动清空页面。' +
-  '请勿把 liepin-cli 挂到手动开启远程调试的日常浏览器上；' +
-  '建议 `liepin quit` 后直接重跑命令，让 CLI 使用自管的常驻浏览器实例，' +
-  '若仍复现，请在浏览器中重新打开 lpt.liepin.com 并完成安全验证。';
+  '猎聘安全脚本可能主动清空了页面。' +
+  '请直接重跑命令；若反复复现，`liepin quit` 后重跑，' +
+  '或在 CLI 拉起的浏览器窗口里手动打开 lpt.liepin.com 完成一次安全验证。';
+
+/** 能 send CDP 命令的最小会话契约（puppeteer 主会话或 mock） */
+interface CdpMinimalClient {
+  send(method: string): Promise<unknown>;
+}
+
+/**
+ * 取 puppeteer 页面主会话。走 CdpFrame 的 client getter，是公开访问器；
+ * 拿不到（mock page、未来 puppeteer 结构变化）返回 null，调用方退化为普通行为。
+ */
+function mainSessionClient(page: Page): CdpMinimalClient | null {
+  try {
+    const frame = page.mainFrame() as unknown as { client?: CdpMinimalClient };
+    const client = frame?.client;
+    return client && typeof client.send === 'function' ? client : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 在 puppeteer 主会话上开关 Runtime 域。开关是按会话生效的，
+ * 断开连接后自然消失，不会给浏览器留下残留状态。
+ */
+export async function setPageRuntime(page: Page, enabled: boolean): Promise<void> {
+  try {
+    await mainSessionClient(page)?.send(enabled ? 'Runtime.enable' : 'Runtime.disable');
+  } catch {
+    /* 主会话不可用时静默跳过，退化为普通导航 */
+  }
+}
+
+/**
+ * 规避猎聘「加载期 CDP 检测」的导航。
+ *
+ * 实测（2026-08-19，Chrome 151）：猎聘安全脚本只在页面加载瞬间检查该页签的
+ * CDP 会话是否启用着 Runtime 域，启用则把页面清成 about:blank——这就是
+ * issue #17 的根因（自管浏览器实例同样 100% 复现，与挂没挂日常浏览器无关）。
+ * 而加载完成后再 Runtime.enable / evaluate 完全不触发。
+ * 所以 goto 前先 Runtime.disable，加载完成后立刻 enable 回来。
+ */
+export async function safeGoto(page: Page, url: string): Promise<void> {
+  await setPageRuntime(page, false);
+  try {
+    await page.goto(url, { waitUntil: 'networkidle2' });
+  } finally {
+    await setPageRuntime(page, true);
+  }
+}
 
 /**
  * 页面被猎聘安全脚本清空（跳到 about:blank）后，任何"已拿到的数据"都不可信、
@@ -137,7 +185,7 @@ export async function lptFetch(page: Page, url: string, opts: { body?: string; c
 /** 导航到 LPT 页面 */
 export async function navigateToLpt(page: Page, path: string = '/recommend', waitSeconds: number = 3): Promise<void> {
   const url = `https://lpt.liepin.com${path}`;
-  await page.goto(url, { waitUntil: 'networkidle2' });
+  await safeGoto(page, url);
   await sleep(waitSeconds * 1000);
   assertLptPageAlive(page, '导航');
 }
