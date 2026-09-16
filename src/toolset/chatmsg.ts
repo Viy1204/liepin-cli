@@ -15,11 +15,21 @@ export interface ChatmsgOptions {
   limit?: number;
 }
 
-function parsePayload(payload: string): string {
+/** 中国大陆手机号：候选人同意索要后，号码就落在卡片消息的 payload 里 */
+const PHONE_PATTERN = /1[3-9]\d{9}/;
+
+/**
+ * 卡片类消息（如候选人同意「索要手机号」后回的那张卡）原本只输出 `[手机号]`，
+ * 号码明文其实就在 payload 里。直接抽出来，省掉「还得人工去网页看一眼」这一步（issue #20）。
+ */
+export function parsePayload(payload: string): string {
   try {
     const body = JSON.parse(payload || '{}').bodies?.[0];
     if (body?.type === 'txt') return body.msg || '';
-    return body?.type ? `[${body.type}]` : '';
+    const label = body?.type ? `[${body.type}]` : '';
+    const phone = PHONE_PATTERN.exec(payload || '');
+    if (phone) return label ? `${label} ${phone[0]}` : phone[0];
+    return label;
   } catch {
     return '';
   }

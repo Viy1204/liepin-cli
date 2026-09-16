@@ -60,6 +60,13 @@ try {
   `spawn(detached)` + `puppeteer.connect`。
 - 关浏览器只有一个出口：`liepin quit`。别在命令路径里加 `browser.close()`。
 
+**Windows 上必须让浏览器脱离调用方的 Job Object**（issue #21）：Agent 宿主一般把整棵进程树
+放进 `KILL_ON_JOB_CLOSE` 的 Job，`spawn({ detached: true })` 只是新建进程组、逃不出 Job，
+CLI 一结束 Chrome 就被连带杀掉（窗口"自己关了"、profile 变 `Crashed`、会话 cookie 丢失 →
+被迫重新扫码 → 又一次重启……）。所以 Windows 默认经 WMI `Win32_Process.Create` 拉起浏览器
+（父进程是 WmiPrvSE，不在 Job 里，但仍在交互会话中，有头窗口照常可见），
+`LIEPIN_SPAWN_BREAKAWAY=false` 可回退。**别改回单纯的 `spawn(detached)`**。
+
 **要让浏览器可见时**（用户说"我看不到浏览器"、需要人工在真窗口里操作）：
 
 ```bash
@@ -67,6 +74,24 @@ RECRUIT_BROWSER_HIDDEN=false liepin <cmd>   # 或 LIEPIN_HEADLESS=false（优先
 ```
 
 已有实例在跑时改变量**不生效**（端口上已有实例会被直接复用），要先 `liepin quit`。
+
+### login 默认复用，别再无条件重启浏览器（issue #21）
+
+`login` 先探一次登录态，**还有效就直接返回**，不碰端口上那只浏览器；只有确实要人工扫码时
+才把无头实例换成有头。24 小时内交互式登录超过 3 次会被拦下，`--force` 才放行。
+
+这条是账号安全约束，不是性能优化：猎聘的会话 cookie `is_persistent=0`，关浏览器 = 退出登录，
+而"重登"又要关浏览器——旧实现让重试登录变成自我强化的循环，直接把账号喂成了「行为异常」。
+**不要为了"确保干净状态"在 login 路径上加 `closeRemoteBrowser()`。**
+
+### 风控形态有两种，都要立即停
+
+1. **页面被清空成 about:blank** —— 加载期 CDP 检测（issue #17），`safeGoto` 规避；
+2. **被 302 到 `safe.liepin.com/.../captchaPage_PC`** —— 账号被判「行为异常」，
+   此时业务接口只回一个**没有 msg 的 `{"flag":0}`**（不是权益不足！），
+   `assertLptPageAlive` / `lptFetch` 都会抛 `RiskControlError`（退出码 3）。
+
+`login` 是唯一例外：人就该停在验证页上过滑块，所以它只用 `assertPageNotBlanked`。
 
 **判断在跑的实例是什么模式**：读 `http://127.0.0.1:53471/json/version` 的 `User-Agent`，
 含 `HeadlessChrome` 即无头（`probeRemoteHeadless()`）。**不要**用进程内变量判断——每条
@@ -116,6 +141,7 @@ await page.evaluate(async (url, body) => {
 | `RECRUIT_BROWSER_HIDDEN` | 招聘工具链共读的隐藏开关；`false` 让窗口可见 | `true`（无头） |
 | `LIEPIN_HEADLESS` | 本 CLI 专属覆盖项，优先级高于上一行 | 跟随上一行 |
 | `LIEPIN_BROWSER_REMOTE_DEBUGGING_PORT` | 固定 CDP 调试端口 | `53471` |
+| `LIEPIN_SPAWN_BREAKAWAY` | 仅 Windows：经 WMI 拉起浏览器以脱离 Job Object；`false` 回退普通 spawn | `true` |
 | `LIEPIN_PROXY` | 代理服务器 | - |
 | `LIEPIN_DEBUG` | 调试模式 | `false` |
 
@@ -130,6 +156,8 @@ await page.evaluate(async (url, body) => {
 | `talent` | 查看人才库 |
 | `resume` | 查看简历详情（入参为 resume_id） |
 | `greet` | 向候选人打招呼（一键沟通，使用职位预设招呼语；入参为候选人 user_id） |
+| `request-phone` | 向候选人索要手机号（点 IM 会话的快捷按钮，需先 greet 建会话） |
+| `request-resume` | 向候选人索要简历（同上） |
 | `joblist` | 查看职位列表 |
 | `quit` | 关掉常驻浏览器（登录态保留；`requiresPage: false`） |
 

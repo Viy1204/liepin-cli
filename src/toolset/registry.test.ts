@@ -8,6 +8,7 @@ import { recommendCommand } from './recommend.js';
 import { talentCommand } from './talent.js';
 import { resumeCommand } from './resume.js';
 import { greetCommand } from './greet.js';
+import { requestPhoneCommand, requestResumeCommand } from './request.js';
 import { joblistCommand } from './joblist.js';
 import { skillCommand } from './skill.js';
 
@@ -32,7 +33,8 @@ interface CommandShape {
 const allCommands: CommandShape[] = [
   loginCommand, searchCommand,
   chatlistCommand, chatmsgCommand, recommendCommand, talentCommand,
-  resumeCommand, greetCommand, joblistCommand, skillCommand,
+  resumeCommand, greetCommand, requestPhoneCommand, requestResumeCommand,
+  joblistCommand, skillCommand,
 ];
 
 test('所有命令名唯一', () => {
