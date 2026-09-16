@@ -41,9 +41,15 @@ liepin-cli 是猎聘招聘者端（lpt.liepin.com）自动化命令行工具，�
 
 ### 登录
 ```bash
-# 首次使用需要登录
+# 首次使用需要登录；登录态仍有效时会直接复用，不重启浏览器、不用重新扫码
 node /tmp/liepin-cli/dist/cli/index.js login
+
+# 确实要重走一遍扫码（同时跳过 24 小时频率保护）
+node /tmp/liepin-cli/dist/cli/index.js login --force
 ```
+
+**不要为了"保险"反复跑 login**：每次真登录都要关掉浏览器重开 + 重新扫码，
+而猎聘把「短时间内频繁重登」直接算作行为异常。24 小时内超过 3 次会被 CLI 拦下。
 
 ### 搜索人才
 ```bash
@@ -70,7 +76,15 @@ node /tmp/liepin-cli/dist/cli/index.js talent
 
 # 向候选人打招呼（resume_id/user_id 取 search/recommend 返回值；message 仅 resume_id 可用）
 node /tmp/liepin-cli/dist/cli/index.js greet <resume_id> --ejobId <职位ID> --message "您好，方便发一份作品集看看吗？"
+
+# 打招呼之后：索要手机号 / 索要简历（必须先有会话，否则按钮不渲染）
+node /tmp/liepin-cli/dist/cli/index.js request-phone <resume_id>
+node /tmp/liepin-cli/dist/cli/index.js request-resume <resume_id>
 ```
+
+完整闭环是「greet → request-phone → request-resume」。候选人同意后，手机号会以卡片消息
+落进会话，`chatmsg` 会把号码明文一并输出（形如 `[cmd] 138xxxxxxxx`），可直接写台账。
+输出里的 `confirmed: false` 表示按钮点了但没能确认请求已送达，需要人工到网页确认。
 
 ### 聊天管理
 ```bash
@@ -99,15 +113,22 @@ node /tmp/liepin-cli/dist/cli/index.js chatmsg <对方imId>
 | `greet` | `usercId` | 候选人 resume_id 或 user_id（search/recommend 返回值，必需） |
 | | `--ejobId` | 关联职位 ID（建议传，用于权限校验与归属） |
 | | `--message` | 自定义消息（传 resume_id 时可用） |
+| `request-phone` | `resumeId` | 候选人 resume_id（必需，需先 greet 建会话） |
+| `request-resume` | `resumeId` | 候选人 resume_id（必需，需先 greet 建会话） |
+| `login` | `--timeout` | 等待扫码秒数（默认 120） |
+| | `--force` | 强制重新登录，跳过复用与 24 小时频率保护 |
 
 ## 防风控节奏（批量操作必须遵守）
 
 猎聘对密集、机械化的操作会弹出文字点选验证码，自动化无法识别，触发后只能人工处理。编排批量流程时严格遵守：
 
 - **打招呼（greet）**：单个候选人之间随机间隔 **15-45 秒**；每批最多 **5 人**，批次之间间隔 **3-5 分钟**
+- **索要手机号 / 简历（request-phone / request-resume）**：跟 greet 同一档节奏，且**只在同一会话里紧接着 greet 之后做**，不要对老会话批量补要
+- **登录（login）**：不要用重登当"万能修复"。默认会复用登录态；24 小时内最多 3 次交互式登录，超了 CLI 会拦（`--force` 才放行）。频繁重登本身就是风控信号
 - **搜索（search）**：CLI 内部翻页已带随机间隔，但不要在短时间内反复变换关键词连续搜索
 - **失败即停**：任何命令连续失败 **2 次**立即停止，不要换参数继续试探——密集试错正是触发风控的主因
-- **风控错误**：报错信息含「触发猎聘风控」「反爬虫挑战」「页面已被清空」时，停止全部自动化操作，提示用户在浏览器中手动完成验证后再继续
+- **风控错误**：报错信息含「触发猎聘风控」「反爬虫挑战」「页面已被清空」「安全验证页」时，停止全部自动化操作，提示用户在浏览器中手动完成验证后再继续
+- **`{"flag":0}` 不是权益问题**：业务接口只回一个没有 msg 的 `{"flag":0}`，是账号被判「行为异常」后风控在静默拦截。**不要**去查简历点 / 权益余额，也不要重试；让用户跑 `liepin login` 在窗口里过掉图形验证
 - **退出码可判别**：`1` 一般错误，`2` 登录态失效（先跑 `liepin login`），`3` 风控/安全异常（立即停止自动化）——编排脚本按退出码分支，不要解析报错文案
 
 ## 故障排除
@@ -147,4 +168,6 @@ export CHROME_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome
 - `liepin talent` - 查看人才库
 - `liepin joblist` - 查看职位列表
 - `liepin greet` - 向候选人打招呼（支持 resume_id + 自定义消息）
+- `liepin request-phone` - 向候选人索要手机号
+- `liepin request-resume` - 向候选人索要简历
 - `liepin quit` - 关掉常驻浏览器（登录态保留）

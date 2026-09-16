@@ -7,7 +7,7 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { config } from '../config.js';
-import { CdpBrowser, closeRemoteBrowser, probeRemoteHeadless } from '../browser/cdp_browser.js';
+import { CdpBrowser, probeRemoteHeadless } from '../browser/cdp_browser.js';
 import { loginCommand } from '../toolset/login.js';
 import { searchCommand } from '../toolset/search.js';
 import { chatlistCommand } from '../toolset/chatlist.js';
@@ -16,6 +16,7 @@ import { recommendCommand } from '../toolset/recommend.js';
 import { talentCommand } from '../toolset/talent.js';
 import { resumeCommand } from '../toolset/resume.js';
 import { greetCommand } from '../toolset/greet.js';
+import { requestPhoneCommand, requestResumeCommand } from '../toolset/request.js';
 import { joblistCommand } from '../toolset/joblist.js';
 import { skillCommand } from '../toolset/skill.js';
 import { quitCommand } from '../toolset/quit.js';
@@ -58,6 +59,8 @@ const commands: Command[] = [
   talentCommand,
   resumeCommand,
   greetCommand,
+  requestPhoneCommand,
+  requestResumeCommand,
   joblistCommand,
   skillCommand,
   quitCommand,
@@ -232,15 +235,12 @@ async function main(): Promise<void> {
 
   const requiresPage = cmd.requiresPage !== false;
 
-  // 登录必须可见：扫码看不见就没法登录。已在跑的实例若是无头，先关掉，再以有头拉起。
-  // 判据读的是端口上那只浏览器自己（/json/version 的 UA），不是进程内变量——每条
-  // liepin 命令都是独立进程，进程内状态刚起时必然是空的，靠它判断等于不判断。
-  // 登录态在 user-data-dir 里，关掉重启不会丢。
-  if (command === 'login') {
+  // login 端口上没有实例时才需要直接拉一只有头的（扫码看不见就没法登录）。
+  // **已有实例一律不动**：先由 login 命令探一次登录态，还有效就直接复用，确实要人工
+  // 扫码时它自己会把无头换成有头。以前无条件关掉重启，把"重试登录"变成了每次都重启
+  // 浏览器的高风险动作，是 issue #21 里账号被判「行为异常」的直接推手。
+  if (command === 'login' && (await probeRemoteHeadless()) === null) {
     process.env.LIEPIN_HEADLESS = 'false';
-    if ((await probeRemoteHeadless()) === true) {
-      await closeRemoteBrowser();
-    }
   }
 
   // 告诉面板「这条命令正在操作这只浏览器」：面板切换有头/无头要关掉浏览器重开，

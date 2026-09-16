@@ -11,7 +11,8 @@
  * 改为自己 `spawn(detached)` + `connect`，退出时只断 CDP。
  */
 
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
+import { promisify } from 'node:util';
 import puppeteer, { Browser, Page } from 'puppeteer-core';
 import { config } from '../config.js';
 import { safeGoto } from '../common/lpt-utils.js';
@@ -80,6 +81,78 @@ export function resolveHeadlessFromEnv(): boolean {
 const LAUNCH_ARGS_HEADLESS_SCREEN = ['--screen-info={0,0 1920x1080 workAreaBottom=40}'];
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const execFileAsync = promisify(execFile);
+
+/**
+ * 把 exe + argv 拼成一条 Windows 命令行（CreateProcess 的 lpCommandLine 语义）：
+ * 含空白或引号的参数整体加双引号，内部 `"` 前补反斜杠，结尾反斜杠成对翻倍。
+ * `--screen-info={0,0 1920x1080 ...}` 这类带空格的参数不加引号会被拆成多个参数，
+ * Chrome 直接启动失败（2026-09-16 实测）。
+ */
+export function toWindowsCommandLine(exe: string, args: string[]): string {
+  const quote = (s: string): string => {
+    if (s.length > 0 && !/[\s"]/.test(s)) return s;
+    let out = '"';
+    let pendingBackslashes = 0;
+    for (const ch of s) {
+      if (ch === '\\') {
+        pendingBackslashes++;
+        continue;
+      }
+      if (ch === '"') {
+        out += '\\'.repeat(pendingBackslashes * 2 + 1) + '"';
+        pendingBackslashes = 0;
+        continue;
+      }
+      out += '\\'.repeat(pendingBackslashes) + ch;
+      pendingBackslashes = 0;
+    }
+    return out + '\\'.repeat(pendingBackslashes * 2) + '"';
+  };
+  return [exe, ...args].map(quote).join(' ');
+}
+
+/**
+ * Windows 上是否让浏览器脱离父进程的 Job Object（默认开；`LIEPIN_SPAWN_BREAKAWAY=false` 关）。
+ *
+ * issue #21 的根因：从 AI Agent 的后台任务里调用 CLI 时，宿主通常把整棵进程树放进一个
+ * `KILL_ON_JOB_CLOSE` 的 Job Object。`spawn({ detached: true })` 只是新建进程组，**逃不出 Job**，
+ * 于是 CLI 进程一结束 Chrome 就被连带 TerminateProcess——用户看到的是"窗口自己关了"，
+ * profile 留下 `exit_type: Crashed`，下次启动弹「Chrome 未正确关闭」，而会话 cookie
+ * （`_e_ld_auth_` / `XSRF-TOKEN` 都是 is_persistent=0）随进程一起没了，只能反复重新扫码。
+ */
+function shouldBreakawayFromJob(): boolean {
+  if (process.platform !== 'win32') return false;
+  const v = process.env.LIEPIN_SPAWN_BREAKAWAY?.trim().toLowerCase();
+  return !(v === 'false' || v === '0' || v === 'no' || v === 'n');
+}
+
+/**
+ * 经 WMI `Win32_Process.Create` 拉起浏览器：进程由系统服务 WmiPrvSE.exe 创建，因此不在
+ * 调用方的 Job Object 里，但仍属于当前交互登录会话（有头窗口照常可见，2026-09-16 Win10 实测）。
+ * 命令行经环境变量交给 PowerShell，省掉再套一层引号转义。
+ * 返回 PID；起不来（无 PowerShell、策略禁 WMI 等）返回 null，调用方退回普通 spawn。
+ */
+async function spawnViaWmi(commandLine: string): Promise<number | null> {
+  try {
+    const { stdout } = await execFileAsync(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        '$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create ' +
+          '-Arguments @{CommandLine=$env:LIEPIN_SPAWN_CMDLINE}; ' +
+          'if ($r.ReturnValue -ne 0) { exit 1 }; $r.ProcessId',
+      ],
+      { env: { ...process.env, LIEPIN_SPAWN_CMDLINE: commandLine }, timeout: 15_000, windowsHide: true },
+    );
+    const pid = Number.parseInt(stdout.trim(), 10);
+    return Number.isFinite(pid) && pid > 0 ? pid : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * 探测固定调试端口上是否已有在跑的 Chrome：直接命中 `/json/version` 拿
@@ -198,6 +271,8 @@ export class CdpBrowser {
     // 不加 --no-sandbox / --disable-gpu 等开关：均为自动化特征，且桌面环境不需要
     const userArgs = [
       `--window-size=${config.viewport.width},${config.viewport.height}`,
+      // 上一只若被外力杀掉（Job Object 连带、任务管理器），别弹「要恢复页面吗？Chrome 未正确关闭」
+      '--hide-crash-restore-bubble',
       ...(this.options.headless ? LAUNCH_ARGS_HEADLESS_SCREEN : []),
       ...(this.options.proxy ? [`--proxy-server=${this.options.proxy}`] : []),
     ];
@@ -216,12 +291,20 @@ export class CdpBrowser {
       chromeArgs.push(`--remote-debugging-port=${REMOTE_DEBUGGING_PORT}`);
     }
 
-    const proc = spawn(executablePath, chromeArgs, {
-      detached: true,
-      stdio: 'ignore',
-      env: process.env,
-    });
-    proc.unref();
+    // Windows 优先走 WMI，让浏览器脱离调用方的 Job Object（见 shouldBreakawayFromJob）
+    let pid = shouldBreakawayFromJob()
+      ? await spawnViaWmi(toWindowsCommandLine(executablePath, chromeArgs))
+      : null;
+
+    if (pid === null) {
+      const proc = spawn(executablePath, chromeArgs, {
+        detached: true,
+        stdio: 'ignore',
+        env: process.env,
+      });
+      proc.unref();
+      pid = proc.pid ?? null;
+    }
 
     // 端口是固定的，所以不需要解析 Chrome 的启动日志，直接轮询探针即可
     const deadline = Date.now() + LAUNCH_READY_MS;
@@ -231,10 +314,12 @@ export class CdpBrowser {
       await sleep(300);
     }
 
-    try {
-      proc.kill();
-    } catch {
-      /* 进程可能已经自己退了 */
+    if (pid !== null) {
+      try {
+        process.kill(pid);
+      } catch {
+        /* 进程可能已经自己退了 */
+      }
     }
     throw new Error(
       `浏览器启动超时：端口 ${REMOTE_DEBUGGING_PORT} 在 ${LAUNCH_READY_MS}ms 内未就绪。` +

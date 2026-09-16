@@ -11,7 +11,14 @@
  */
 
 import { Page } from 'puppeteer-core';
-import { LIEPIN_LPT_API, lptFetch, navigateToLpt, readLptImId, safeGoto } from '../common/lpt-utils.js';
+import {
+  LIEPIN_LPT_API,
+  lptFetch,
+  navigateToLpt,
+  readLptImId,
+  getResumeInfo,
+  openResumeImPanel,
+} from '../common/lpt-utils.js';
 import { sleepRandom } from '../common/utils.js';
 
 export interface GreetOptions {
@@ -19,13 +26,6 @@ export interface GreetOptions {
   ejobId?: string;
   jobId?: string;
   message?: string;
-}
-
-interface ResumeInfo {
-  resumeId: string;
-  usercId: string;
-  imId: string;
-  name: string;
 }
 
 interface ChatJob {
@@ -36,35 +36,6 @@ interface ChatJob {
 
 function looksLikeUserId(value: string): boolean {
   return /^[a-f0-9]{32}$/i.test(value);
-}
-
-async function getResumeInfo(page: Page, resumeId: string): Promise<ResumeInfo> {
-  const form = new URLSearchParams();
-  form.set('pageParamVo', JSON.stringify({
-    resIdEncode: resumeId,
-    sfrom: 'R_SEARCH_CONDITION',
-    applyId: '',
-  }));
-
-  const data = await lptFetch(page, `${LIEPIN_LPT_API}/api/com.liepin.rresume.usere.pc.resume-view`, {
-    body: form.toString(),
-  });
-
-  if (data.flag !== 1) {
-    throw new Error(`获取简历失败: ${data.msg || data.message || JSON.stringify(data).slice(0, 200)}`);
-  }
-
-  const vo = data.data?.resumeDetailVo;
-  if (!vo?.encodeUsercId) {
-    throw new Error('获取简历失败: 响应缺少 encodeUsercId');
-  }
-
-  return {
-    resumeId,
-    usercId: String(vo.encodeUsercId),
-    imId: String(vo.imId || ''),
-    name: vo.baseInfo?.name || '',
-  };
 }
 
 async function getChatJobs(page: Page): Promise<ChatJob[]> {
@@ -130,10 +101,7 @@ async function verifyMessageSent(page: Page, oppositeImId: string, message: stri
 }
 
 async function sendMessageInIm(page: Page, resumeId: string, oppositeImId: string, message: string): Promise<void> {
-  await safeGoto(page, `https://lpt.liepin.com/resume/detail?resIdEncode=${encodeURIComponent(resumeId)}&sfrom=R_SEARCH_CONDITION`);
-  await page.waitForSelector('.xpath-open-im-btn', { timeout: 20000 });
-  await page.click('.xpath-open-im-btn');
-  await page.waitForSelector('.im-ui-textarea', { timeout: 20000 });
+  await openResumeImPanel(page, resumeId);
 
   // React 受控组件：keyboard.type 中文输入极慢且易超时，execCommand 才能触发 React 状态更新
   await page.evaluate((msg: string) => {

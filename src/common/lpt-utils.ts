@@ -24,6 +24,22 @@ const RISK_CONTROL_PATTERN = /验证码|安全验证|请完成验证|操作(过�
 
 export { AuthExpiredError, RELOGIN_HINT, isAuthExpiredResponse } from './utils.js';
 
+/**
+ * 猎聘安全中心的拦截页：账号被判「行为异常」后，页面导航会被 302 到
+ * `safe.liepin.com/page/liepin/captchaPage_PC?...&backurl=<原地址>`，要人工点图形验证。
+ * 实测（2026-09-16）：此时 jobmanage.list 等接口仍 flag=1，但 resume-view 之类业务接口
+ * 只回 `{"flag":0}`——所以「login 成功」不等于「业务可用」（issue #21 问题三）。
+ */
+const RISK_PAGE_URL_PATTERN = /safe\.liepin\.com|captchaPage/i;
+
+export function isRiskPageUrl(url: string): boolean {
+  return RISK_PAGE_URL_PATTERN.test(url);
+}
+
+export const RISK_PAGE_HINT =
+  '猎聘安全中心已把账号判为「行为异常」，业务接口会被静默拦截。' +
+  '请勿重试：运行 `liepin login`，在弹出的浏览器窗口里完成图形验证后再继续。';
+
 const PAGE_BLANKED_HINT =
   '猎聘安全脚本可能主动清空了页面。' +
   '请直接重跑命令；若反复复现，`liepin quit` 后重跑，' +
@@ -82,10 +98,22 @@ export async function safeGoto(page: Page, url: string): Promise<void> {
  * 页面被猎聘安全脚本清空（跳到 about:blank）后，任何"已拿到的数据"都不可信、
  * 后续请求也必然失败，必须立即以可判别的异常终止（见 issue #17）。
  */
-export function assertLptPageAlive(page: Page, when: string): void {
+export function assertPageNotBlanked(page: Page, when: string): void {
   const url = page.url();
   if (url === 'about:blank' || url.startsWith('chrome-error://')) {
     throw new RiskControlError(`${when}时页面已被清空（当前 ${url}）。${PAGE_BLANKED_HINT}`);
+  }
+}
+
+/**
+ * 除「页面被清空」外，还把「被 302 到安全中心验证页」视为不可继续：此时所有 LPT 接口
+ * 都是跨域 fetch，必然失败，继续等只会白等（issue #21 问题四）。
+ * `login` 例外——那里人就该停在验证页上过滑块，所以它只用 assertPageNotBlanked。
+ */
+export function assertLptPageAlive(page: Page, when: string): void {
+  assertPageNotBlanked(page, when);
+  if (isRiskPageUrl(page.url())) {
+    throw new RiskControlError(`${when}时页面被跳转到猎聘安全验证页（当前 ${page.url()}）。${RISK_PAGE_HINT}`);
   }
 }
 
@@ -177,6 +205,13 @@ export async function lptFetch(page: Page, url: string, opts: { body?: string; c
         `猎聘登录态已失效（flag=${data?.flag}${msg ? `，${msg}` : ''}）。${RELOGIN_HINT}`,
       );
     }
+    // 光秃秃的 {"flag":0}（无 msg 无 data）是风控拦业务接口的形态，不是简历权益/权限问题；
+    // 当成一般错误会把使用者带去查「简历点余额」并反复重试，反而加重风控（issue #21 问题三）
+    if (data?.flag === 0 && !msg && (data.data === undefined || data.data === null)) {
+      throw new RiskControlError(
+        `接口只返回了 {"flag":0}（无任何说明），这是猎聘风控拦截业务接口的典型形态。${RISK_PAGE_HINT}`,
+      );
+    }
   }
 
   return data;
@@ -217,4 +252,50 @@ export async function readLptImId(page: Page): Promise<string> {
   });
   
   return result || '';
+}
+
+export interface LptResumeInfo {
+  resumeId: string;
+  usercId: string;
+  imId: string;
+  name: string;
+}
+
+/** 用 resume_id 换候选人的 usercId / imId / 姓名（resume-view 接口） */
+export async function getResumeInfo(page: Page, resumeId: string): Promise<LptResumeInfo> {
+  const form = new URLSearchParams();
+  form.set('pageParamVo', JSON.stringify({
+    resIdEncode: resumeId,
+    sfrom: 'R_SEARCH_CONDITION',
+    applyId: '',
+  }));
+
+  const data = await lptFetch(page, `${LIEPIN_LPT_API}/api/com.liepin.rresume.usere.pc.resume-view`, {
+    body: form.toString(),
+  });
+
+  if (data.flag !== 1) {
+    throw new Error(`获取简历失败: ${data.msg || data.message || JSON.stringify(data).slice(0, 200)}`);
+  }
+
+  const vo = data.data?.resumeDetailVo;
+  if (!vo?.encodeUsercId) {
+    throw new Error('获取简历失败: 响应缺少 encodeUsercId');
+  }
+
+  return {
+    resumeId,
+    usercId: String(vo.encodeUsercId),
+    imId: String(vo.imId || ''),
+    name: vo.baseInfo?.name || '',
+  };
+}
+
+/** 打开简历详情页并展开右侧 IM 聊天面板（输入框出现即就绪） */
+export async function openResumeImPanel(page: Page, resumeId: string): Promise<void> {
+  await safeGoto(page, `https://lpt.liepin.com/resume/detail?resIdEncode=${encodeURIComponent(resumeId)}&sfrom=R_SEARCH_CONDITION`);
+  assertLptPageAlive(page, '打开简历详情');
+  await page.waitForSelector('.xpath-open-im-btn', { timeout: 20000 });
+  await page.click('.xpath-open-im-btn');
+  await page.waitForSelector('.im-ui-textarea', { timeout: 20000 });
 }

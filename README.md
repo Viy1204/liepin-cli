@@ -24,6 +24,7 @@ liepin help
 | 猎聘简历预览 | `liepin resume <简历ID>` |
 | 猎聘候选人筛选 | `liepin recommend` / `liepin talent` |
 | 主动打招呼 | `liepin greet <resume_id> --ejobId <jobId> --message "您好，方便发作品集看看吗？"` |
+| 索要手机号 / 简历 | `liepin request-phone <resume_id>` / `liepin request-resume <resume_id>` |
 | 聊天记录查看 | `liepin chatlist` / `liepin chatmsg <对方imId>` |
 | AI Agent 集成 | 子进程调用，每条命令输出结构化文本，可直接被 Agent 解析 |
 | 数据本地化 | 无中间层服务，cookie 与截图仅存在 `~/.liepin-cli/` |
@@ -75,6 +76,8 @@ liepin help
 | `liepin talent` | 查看人才库 |
 | `liepin resume <简历ID>` | 查看简历详情（传 search / recommend / talent 返回的 resume_id） |
 | `liepin greet <resume_id 或 user_id> [--ejobId <职位ID>] [--message <消息>]` | **主动打招呼**：发起沟通，传 `resume_id` 时可补发自定义消息 |
+| `liepin request-phone <resume_id>` | 向候选人**索要手机号**（需先 `greet` 建会话） |
+| `liepin request-resume <resume_id>` | 向候选人**索要简历**（需先 `greet` 建会话） |
 | `liepin joblist` | 查看职位列表 |
 | `liepin quit` | 关掉常驻的浏览器（登录态保留） |
 
@@ -107,7 +110,15 @@ liepin chatmsg <对方imId>
 
 # 6. 主动打招呼（resume_id / user_id 来自 search / recommend / talent；ejobId 来自 joblist）
 liepin greet <resume_id> --ejobId <jobId> --message "您好，方便发一份作品集看看吗？"
+
+# 7. 会话建立后索要联系方式与简历（候选人同意后，手机号会出现在 chatmsg 输出里）
+liepin request-phone <resume_id>
+liepin request-resume <resume_id>
 ```
+
+> `login` **默认复用现有登录态**：还有效就直接返回、不重启浏览器，也不用重新扫码。
+> 确实要重来一遍用 `liepin login --force`。同一天反复重登会被猎聘判「行为异常」，
+> 所以 24 小时内超过 3 次交互式登录会被拦下（同样可用 `--force` 放行）。
 
 ---
 
@@ -146,6 +157,7 @@ liepin skill install
 | `RECRUIT_BROWSER_HIDDEN` | 招聘工具链共读的**统一覆盖**开关（boss-cli / liepin-cli / DSH 面板都认）；设 `false` 让窗口可见。不设时各 CLI 用自己的默认 | 不设（猎聘默认无头） |
 | `LIEPIN_HEADLESS` | 本 CLI 专属覆盖项，优先级高于 `RECRUIT_BROWSER_HIDDEN` | 跟随上一行 |
 | `LIEPIN_BROWSER_REMOTE_DEBUGGING_PORT` | 固定 CDP 调试端口（浏览器跨命令常驻靠它） | `53471` |
+| `LIEPIN_SPAWN_BREAKAWAY` | 仅 Windows：经 WMI 拉起浏览器，使其脱离调用方的 Job Object（AI Agent 后台任务里必需，见下方常见问题）。设 `false` 回退到普通 spawn | `true` |
 | `LIEPIN_PROXY` | 代理服务器 | - |
 | `LIEPIN_DEBUG` | 调试模式 | `false` |
 
@@ -223,6 +235,30 @@ $env:CHROME_PATH="C:\Program Files\Google\Chrome\Application\chrome.exe"
 
 0.2.4 起已根治：猎聘安全脚本会在页面加载瞬间检测 CDP 会话的 Runtime 域并清页，
 现在所有导航在加载期间临时关闭 Runtime（`safeGoto`）。旧版本遇到请升级。
+
+### Windows：浏览器窗口自己关掉 + 每次启动弹「Chrome 未正确关闭」
+
+0.2.6 起已修复（issue #21）。根因不在 CLI 的关闭逻辑，而在**进程归属**：从 AI Agent 的
+后台任务里调用 CLI 时，宿主通常把整棵进程树放进一个 `KILL_ON_JOB_CLOSE` 的 Job Object，
+而 `spawn({ detached: true })` 只是新建进程组、**逃不出 Job**——CLI 一结束，Chrome 就被
+连带终止，于是窗口"自己关了"、profile 留下 `exit_type: Crashed`、下次启动弹恢复气泡。
+
+现在 Windows 上改经 WMI `Win32_Process.Create` 拉起浏览器（进程归 WmiPrvSE，不在调用方
+的 Job 里），并加 `--hide-crash-restore-bubble` 兜底。要回退到旧行为设 `LIEPIN_SPAWN_BREAKAWAY=false`。
+
+顺带说明为什么它会连累登录：`_e_ld_auth_` / `XSRF-TOKEN` 都是会话 cookie（`is_persistent=0`），
+浏览器进程一没就等于退出登录，于是又得重新扫码——而重新扫码以前每次都会再关一次浏览器。
+这个自我强化的循环正是账号被判「行为异常」的主因，0.2.6 一并断掉了（见下一条）。
+
+### 账号被猎聘判「行为异常」，弹安全验证
+
+页面会被 302 到 `safe.liepin.com/.../captchaPage_PC`。此时**所有业务接口都被静默拦截**，
+`resume` 这类命令只会收到一个没有任何说明的 `{"flag":0}`——那不是简历权益不足，是风控。
+
+- 0.2.6 起 CLI 直接识别这两种形态并以**退出码 3** 立即失败，附「请勿重试」提示，
+  不再让脚本误判成权限问题、也不再对着验证页干等到超时；
+- 处理办法只有人工过验证：`liepin login`（会切出有头窗口），在窗口里点「点击验证」完成滑块；
+- **不要反复重登**。`login` 默认复用现有会话，24 小时内超过 3 次交互式登录会被拦下。
 
 ### 被检测为自动化
 

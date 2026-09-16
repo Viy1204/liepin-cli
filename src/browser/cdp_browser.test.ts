@@ -1,6 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { probeRemoteHeadless, REMOTE_DEBUGGING_PORT, resolveHeadlessFromEnv } from './cdp_browser.js';
+import {
+  probeRemoteHeadless,
+  REMOTE_DEBUGGING_PORT,
+  resolveHeadlessFromEnv,
+  toWindowsCommandLine,
+} from './cdp_browser.js';
 
 const HEADLESS_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36';
@@ -60,6 +65,31 @@ test('无法识别的值不当作覆盖，回落到共读变量', () => {
 
 test('固定调试端口默认 53471，紧跟 boss-cli 的 53470', () => {
   assert.equal(REMOTE_DEBUGGING_PORT, 53471);
+});
+
+test('Windows 命令行拼接：含空格的参数必须整体加引号', () => {
+  // exe 路径带空格；--screen-info 带空格，不加引号会被拆成 4 个参数，Chrome 直接启动失败
+  const line = toWindowsCommandLine('C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', [
+    '--headless=new',
+    '--screen-info={0,0 1920x1080 workAreaBottom=40}',
+  ]);
+
+  assert.equal(
+    line,
+    '"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" ' +
+      '--headless=new "--screen-info={0,0 1920x1080 workAreaBottom=40}"',
+  );
+});
+
+test('Windows 命令行拼接：不含空白的参数保持原样，不平白加引号', () => {
+  assert.equal(toWindowsCommandLine('chrome.exe', ['--remote-debugging-port=53471']),
+    'chrome.exe --remote-debugging-port=53471');
+});
+
+test('Windows 命令行拼接：参数里的引号与反斜杠按 CreateProcess 规则转义', () => {
+  assert.equal(toWindowsCommandLine('a.exe', ['say "hi"']), 'a.exe "say \\"hi\\""');
+  // 结尾反斜杠要翻倍，否则会把收尾的引号转义掉
+  assert.equal(toWindowsCommandLine('a.exe', ['C:\\dir with space\\']), 'a.exe "C:\\dir with space\\\\"');
 });
 
 test('probeRemoteHeadless 按 /json/version 的 UA 判模式', async (t) => {
