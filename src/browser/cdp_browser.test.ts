@@ -31,21 +31,20 @@ function withEnv(vars: Record<string, string>, fn: () => void): void {
   }
 }
 
-test('默认无头：猎聘的风控形态一次都没观测过，没有证据支持翻默认', () => {
-  withEnv({}, () => assert.equal(resolveHeadlessFromEnv(), true));
+test('默认有头：无头的 UA 自报 HeadlessChrome，等于每个请求都告诉猎聘自己是工具', () => {
+  withEnv({}, () => assert.equal(resolveHeadlessFromEnv(), false));
 });
 
-test('共读变量是统一覆盖开关，不设时用猎聘自己的默认（无头）', () => {
+test('共读变量是统一覆盖开关，不设时用本 CLI 自己的默认（有头）', () => {
   for (const v of ['true', 'TRUE', '1', 'yes', 'y']) {
     withEnv({ RECRUIT_BROWSER_HIDDEN: v }, () => assert.equal(resolveHeadlessFromEnv(), true));
   }
-  // 显式给假值才拉到有头——boss 那边默认就是有头，这样两家能一次摆平
   for (const v of ['false', 'FALSE', '0', 'no', 'n']) {
     withEnv({ RECRUIT_BROWSER_HIDDEN: v }, () => assert.equal(resolveHeadlessFromEnv(), false));
   }
-  // 无意义值不当覆盖，回落到猎聘默认
-  withEnv({ RECRUIT_BROWSER_HIDDEN: 'maybe' }, () => assert.equal(resolveHeadlessFromEnv(), true));
-  withEnv({ RECRUIT_BROWSER_HIDDEN: '' }, () => assert.equal(resolveHeadlessFromEnv(), true));
+  // 无意义值不当覆盖，回落到默认（有头）
+  withEnv({ RECRUIT_BROWSER_HIDDEN: 'maybe' }, () => assert.equal(resolveHeadlessFromEnv(), false));
+  withEnv({ RECRUIT_BROWSER_HIDDEN: '' }, () => assert.equal(resolveHeadlessFromEnv(), false));
 });
 
 test('LIEPIN_HEADLESS 优先级高于共读变量，两个方向都生效', () => {

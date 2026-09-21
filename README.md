@@ -154,45 +154,50 @@ liepin skill install
 | `CHROME_PATH` | Chrome/Edge 可执行文件路径；Windows / macOS / Linux 常见安装路径会自动检测 | - |
 | `LIEPIN_USER_DATA_DIR` | 用户数据目录 | `~/.liepin-cli/user-data` |
 | `LIEPIN_SCREENSHOT_DIR` | 截图目录 | `~/.liepin-cli/screenshots` |
-| `RECRUIT_BROWSER_HIDDEN` | 招聘工具链共读的**统一覆盖**开关（boss-cli / liepin-cli / DSH 面板都认）；设 `false` 让窗口可见。不设时各 CLI 用自己的默认 | 不设（猎聘默认无头） |
+| `RECRUIT_BROWSER_HIDDEN` | 招聘工具链共读的**统一覆盖**开关（boss-cli / liepin-cli / DSH 面板都认）；设 `true` 让窗口隐藏。不设时各 CLI 用自己的默认 | 不设（默认有头） |
 | `LIEPIN_HEADLESS` | 本 CLI 专属覆盖项，优先级高于 `RECRUIT_BROWSER_HIDDEN` | 跟随上一行 |
 | `LIEPIN_BROWSER_REMOTE_DEBUGGING_PORT` | 固定 CDP 调试端口（浏览器跨命令常驻靠它） | `53471` |
 | `LIEPIN_SPAWN_BREAKAWAY` | 仅 Windows：经 WMI 拉起浏览器，使其脱离调用方的 Job Object（AI Agent 后台任务里必需，见下方常见问题）。设 `false` 回退到普通 spawn | `true` |
 | `LIEPIN_PROXY` | 代理服务器 | - |
 | `LIEPIN_DEBUG` | 调试模式 | `false` |
 
-### 浏览器默认看不见，怎么让它可见？
+### 浏览器默认可见，怎么把它藏起来？
 
-**猎聘默认无头**：有头窗口一启动就抢走键盘焦点，会打断你正在做的别的事。
+**默认有头**（与 boss-cli 一致）。代价是有头窗口一启动就抢走键盘焦点，会打断你手上的事；
+想藏起来：
 
 ```bash
-RECRUIT_BROWSER_HIDDEN=false liepin recommend   # 共读开关，boss / liepin / 面板都认
-LIEPIN_HEADLESS=false liepin recommend          # 只影响 liepin-cli，优先级更高
+RECRUIT_BROWSER_HIDDEN=true liepin recommend   # 共读开关，boss / liepin / 面板都认
+LIEPIN_HEADLESS=true liepin recommend          # 只影响 liepin-cli，优先级更高
 ```
 
-`liepin login` **不受影响**——扫码必须看得见，它会自己把无头实例关掉、以有头重启（登录态在
-`~/.liepin-cli/user-data` 里，不会丢）。
+⚠️ **但先读下一节再决定要不要藏**——无头的 UA 会自报 `HeadlessChrome`。
 
-注意：**换了变量不会让已经在跑的那只浏览器变可见**。端口上已有实例会被直接复用，得先
+注意：**换了变量不会让已经在跑的那只浏览器换模式**。端口上已有实例会被直接复用，得先
 `liepin quit`，下条命令才会按新模式重启。
 
 想看浏览器在做什么但不要窗口抢焦点，用 [recruiting-copilot](https://github.com/Viy1204/recruiting-copilot)
 的 DSH「招聘浏览器」面板（默认折叠、默认只读，操作请走 CLI）。
 
-#### 为什么 boss-cli 默认有头、猎聘默认无头（2026-08-19）
+#### 为什么默认有头（2026-09-21 翻的默认，此前是无头）
 
-按证据分别定的，不强求一致：
+- **无头的 User-Agent 里带 `HeadlessChrome/<ver>`**，等于每个请求都自报「我是自动化工具」。
+  本 CLI **刻意不覆盖 UA**（伪造的 UA 与 sec-ch-ua Client Hints、真实平台互相矛盾，本身
+  就是更明显的指纹），所以这条没法靠改 UA 绕过。BOSS 侧正是踩了它：账号被限制 **web 端
+  登录 24 小时**，页面文案写「系统检测到您的账号存在使用第三方招聘管理系统、插件、外挂、
+  软件等辅助工具」；另一个团队用默认有头长期无事，AI 擅自改走无头之后当天封号。
+- **2026-09-20 猎聘侧实测**：连续无头调用后账号被判「行为异常」，302 到
+  `safe.liepin.com/.../captchaPage_PC`，业务接口开始静默拦截（第二种风控形态）。
 
-- **BOSS 默认有头**：已实测两起账号事故都指向无头——一个账号被限制 **web 端登录 24 小时**，
-  页面文案明确写「系统检测到您的账号存在使用第三方招聘管理系统、插件、外挂、软件等辅助工具」；
-  另一个团队用上游 boss-cli（默认有头）长期无事，他们的 AI 擅自改走无头之后当天封号。
-- **猎聘保持无头**：风控与有头/无头无关——已实测猎聘安全脚本在**页面加载瞬间**检测
-  该页签的 CDP 会话是否启用着 Runtime 域，启用则把页面清成 about:blank（2026-08-19，
-  有头模式 100% 复现）；`safeGoto` 在导航期间临时关闭 Runtime 规避。无头「不抢键盘焦点」
-  仍是实打实的好处。
+⚠️ 这**不等于**已证明「无头是唯一成因」——调用频次、issue #21 的重登循环都可能有份。
+但 UA 自报是确定存在的送分题，先摘掉。
 
-所以 `RECRUIT_BROWSER_HIDDEN` 的语义是**统一覆盖开关**，而不是「提供默认值」：不设时两个 CLI
-各用自己的默认，显式设了才把两家拉平。想一次把两边都摆到有头就 `RECRUIT_BROWSER_HIDDEN=false`。
+0819 定无头时的另一条结论**仍然成立**：猎聘安全脚本在页面加载瞬间检测该页签的 CDP 会话
+是否启用着 Runtime 域，启用则把页面清成 about:blank——这条**与有头/无头无关**，照旧由
+`safeGoto` 在导航期间临时关闭 Runtime 规避。
+
+`RECRUIT_BROWSER_HIDDEN` 的语义仍是**统一覆盖开关**而不是「提供默认值」：不设时两个 CLI
+各用自己的默认（现在两家都是有头），显式设了才把两家拉平。
 
 ### 浏览器跨命令常驻
 

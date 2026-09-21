@@ -49,10 +49,17 @@ try {
 `2` 登录态失效（`AuthExpiredError`，先 `liepin login`）；`3` 风控/安全异常
 （`RiskControlError`，包括页面被猎聘安全脚本清空为 about:blank，立即停止自动化）。
 
-### 浏览器默认无头且跨命令常驻（重要）
+### 浏览器默认有头且跨命令常驻（重要）
 
-浏览器**默认无头**（看不见窗口），且**命令结束只断 CDP、不关浏览器**——下条命令直连
-同一只常驻实例（同一登录态、同一标签），DSH 的「招聘浏览器」面板也靠这个才能挂上来镜像。
+浏览器**默认有头**（2026-09-21 翻的默认，此前无头），且**命令结束只断 CDP、不关浏览器**——
+下条命令直连同一只常驻实例（同一登录态、同一标签），DSH 的「招聘浏览器」面板也靠这个才能
+挂上来镜像。
+
+**❗别把默认改回无头。** 本 CLI 刻意不覆盖 User-Agent（伪造 UA 与 sec-ch-ua Client Hints、
+真实平台矛盾，本身就是更强的指纹），所以无头下猎聘收到的 UA 明晃晃带着 `HeadlessChrome/<ver>`，
+等于每个请求自报「我是第三方辅助工具」。BOSS 侧已因此被限 web 端登录；猎聘侧 2026-09-20 实测
+连续无头调用后账号被判「行为异常」、302 到 `captchaPage_PC`、业务接口静默拦截。
+完整依据见 `resolveHeadlessFromEnv()` 的注释。
 
 - 占固定调试端口 **53471**（`LIEPIN_BROWSER_REMOTE_DEBUGGING_PORT` 可覆盖），boss-cli 是 53470。
 - **不要改回 `puppeteer.launch()`**：它依赖的 `@puppeteer/browsers` 会在 Node 进程 exit 时
@@ -67,10 +74,10 @@ CLI 一结束 Chrome 就被连带杀掉（窗口"自己关了"、profile 变 `Cr
 （父进程是 WmiPrvSE，不在 Job 里，但仍在交互会话中，有头窗口照常可见），
 `LIEPIN_SPAWN_BREAKAWAY=false` 可回退。**别改回单纯的 `spawn(detached)`**。
 
-**要让浏览器可见时**（用户说"我看不到浏览器"、需要人工在真窗口里操作）：
+**要把浏览器藏起来时**（用户嫌窗口抢焦点，且已被告知上面的风控代价）：
 
 ```bash
-RECRUIT_BROWSER_HIDDEN=false liepin <cmd>   # 或 LIEPIN_HEADLESS=false（优先级更高）
+RECRUIT_BROWSER_HIDDEN=true liepin <cmd>   # 或 LIEPIN_HEADLESS=true（优先级更高）
 ```
 
 已有实例在跑时改变量**不生效**（端口上已有实例会被直接复用），要先 `liepin quit`。
@@ -138,7 +145,7 @@ await page.evaluate(async (url, body) => {
 | `LIEPIN_USER_DATA_DIR` | 用户数据目录 | `~/.liepin-cli/user-data` |
 | `LIEPIN_SCREENSHOT_DIR` | 截图目录 | `~/.liepin-cli/screenshots` |
 | `LIEPIN_CONFIG_DIR` | 配置目录 | `~/.liepin-cli` |
-| `RECRUIT_BROWSER_HIDDEN` | 招聘工具链共读的隐藏开关；`false` 让窗口可见 | `true`（无头） |
+| `RECRUIT_BROWSER_HIDDEN` | 招聘工具链共读的隐藏开关；`true` 让窗口隐藏（有风控代价，见上） | 不设（默认有头） |
 | `LIEPIN_HEADLESS` | 本 CLI 专属覆盖项，优先级高于上一行 | 跟随上一行 |
 | `LIEPIN_BROWSER_REMOTE_DEBUGGING_PORT` | 固定 CDP 调试端口 | `53471` |
 | `LIEPIN_SPAWN_BREAKAWAY` | 仅 Windows：经 WMI 拉起浏览器以脱离 Job Object；`false` 回退普通 spawn | `true` |

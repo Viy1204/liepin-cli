@@ -45,19 +45,30 @@ const LAUNCH_READY_MS = 30_000;
  * 是否以无头（隐藏）方式启动。
  *
  * 优先级：`LIEPIN_HEADLESS`（本 CLI 专属）> `RECRUIT_BROWSER_HIDDEN`（招聘工具链共读的
- * 统一覆盖开关，**只在显式设置时生效**）> **猎聘自己的默认：无头**。
+ * 统一覆盖开关，**只在显式设置时生效**）> **默认：有头**。
  *
- * **两家默认不同，这是按证据定的（2026-08-19）**：
+ * **2026-09-21 翻默认：无头 → 有头，两家 CLI 就此对齐。**
  *
- * - BOSS 侧默认**有头**——已实测两起账号事故都指向无头：一个账号被限制 web 端登录，
- *   页面文案明确写「检测到使用第三方招聘管理系统、插件、外挂、软件等辅助工具」；
- *   另一团队用上游版（默认有头）长期无事、AI 擅自改走无头当天封号。
- * - 猎聘侧保持**无头**——风控与有头/无头无关：已实测其安全脚本在页面加载瞬间检测
- *   CDP 会话的 Runtime 域，启用则清页（2026-08-19 有头模式复现），由 safeGoto 规避；
- *   而无头带来的「不抢键盘焦点」是实打实的好处。
+ * 翻的依据是 0819 定无头时还不存在的两条：
  *
- * 所以 `RECRUIT_BROWSER_HIDDEN` 的语义是「统一覆盖」而不是「提供默认值」：不设时两个
- * CLI 各用自己的默认，显式设了才拉平。想一次把两家都摆到同一模式，就显式设它。
+ * 1. **本 CLI 刻意不覆盖 User-Agent**（见 launch 处的注释：伪造 UA 与 sec-ch-ua Client
+ *    Hints、真实平台矛盾，本身就是指纹）。于是无头下猎聘收到的 UA 里明晃晃带着
+ *    `HeadlessChrome/<ver>` —— 等于每个请求都自报「我是自动化工具」。BOSS 侧正是踩了
+ *    这条：账号被限 web 登录，页面文案写「检测到使用第三方招聘管理系统、插件、外挂、
+ *    软件等辅助工具」。0819 判「猎聘风控与有头/无头无关」时只验了 Runtime 域清页这一种
+ *    形态，没把 UA 这条算进去。
+ * 2. **2026-09-20 实测**：连续无头调用后账号被判「行为异常」，302 到
+ *    `safe.liepin.com/.../captchaPage_PC`，业务接口开始静默拦截。这是第二种风控形态，
+ *    与 0819 观测到的清页不是一回事。
+ *
+ * ⚠️ 不能说已证明「无头是唯一成因」——调用频次、issue #21 的重登循环都可能有份。但
+ * UA 自报这条是确定存在的送分题，先摘掉；代价（有头窗口抢键盘焦点）已知且可控。
+ *
+ * 0819 关于清页的结论仍然成立：猎聘安全脚本在页面加载瞬间检测 CDP 会话的 Runtime 域，
+ * 启用则把页面清成 about:blank——这条**与有头/无头无关**，照旧由 safeGoto 规避。
+ *
+ * `RECRUIT_BROWSER_HIDDEN` 的语义仍是「统一覆盖」而不是「提供默认值」。想回到无头：
+ * `LIEPIN_HEADLESS=true`。
  */
 export function resolveHeadlessFromEnv(): boolean {
   const own = process.env.LIEPIN_HEADLESS?.trim().toLowerCase();
@@ -66,7 +77,7 @@ export function resolveHeadlessFromEnv(): boolean {
   const shared = process.env.RECRUIT_BROWSER_HIDDEN?.trim().toLowerCase();
   if (shared === 'true' || shared === '1' || shared === 'yes' || shared === 'y') return true;
   if (shared === 'false' || shared === '0' || shared === 'no' || shared === 'n') return false;
-  return true;
+  return false;
 }
 
 /**
