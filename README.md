@@ -244,7 +244,12 @@ $env:CHROME_PATH="C:\Program Files\Google\Chrome\Application\chrome.exe"
 
 0.2.4 加入了显式导航的 `safeGoto` 处理，但不能称为空白问题已经根治。
 [#23 的 2026-10-16 补充](https://github.com/Viy1204/liepin-cli/issues/23#issuecomment-6212675882)
-报告 macOS / Chrome 155 / 修改版 0.2.7 的可见页面流程仍间歇清页，触发原因尚未确定。
+报告 macOS / Chrome 155 / 修改版 0.2.7 的可见页面流程仍间歇清页，对方环境的具体触发条件仍待验证。
+
+2026-10-16 本机 Windows / Chrome 154 也复现了清页，并捕获到安全脚本的控制台耗时探针命中后主动导航。
+最小 DOM/Input 连接完成了预览开关、两次搜索及各 60 秒持连接观察，未清页。
+供同一 UI 路径复测的 [独立实验脚本](experiments/issue23-ui/README.md) 要求 Node 24；
+[实验记录](experiments/issue23-ui/EVIDENCE.md) 列出失败对照及证据边界。正式 CLI 的连接实现未替换，未发布新版本，不能据此关闭 #23。
 
 #### 原生命令与自定义 controller 的支持边界
 
@@ -259,7 +264,7 @@ $env:CHROME_PATH="C:\Program Files\Google\Chrome\Application\chrome.exe"
 
 #### #23 的下一步最小对照
 
-当前无需恢复平台测试。先保留原 profile 和修改版，在独立安装目录准备未经修改的
+对方环境复测时，先保留原 profile 和修改版，在独立安装目录准备未经修改的
 `@viyzhu/liepin-cli@0.2.7`，记录 Node、Chrome、Puppeteer 的实际版本及安装文件哈希。
 四份 package diff 中，`safeGoto` 不恢复 Runtime 是原版契约差异；扩展加载仅在启动新浏览器时
 生效；聊天分页与简历 URL 读取未出现在这两个失败调用链上。不要把它们同时回滚后归因。

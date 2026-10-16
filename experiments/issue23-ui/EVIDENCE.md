@@ -30,6 +30,20 @@
 
 最小连接不订阅 console 调试事件，不发送 `Runtime.enable`、`Runtime.disable` 或 `Debugger.*`。保留普通页面读取、滚动、鼠标键盘输入与导航事件；没有改动 console、安全脚本、浏览器身份或清页行为。真实测试无其他测试浏览器并行运行，用户确认未手动操作猎聘浏览器。
 
+## 交付文件回验
+
+同日 19:00–19:02，再直接执行本目录 `controller.mjs`，而非仅验证 runtime 原型：
+
+```json
+{"command":"mapping-search-once","url":"https://lpt.liepin.com/search","bodyLength":4291,"searchValue":"图形学","resultCards":20,"visibleClose":1}
+{"command":"open-card-preview","url":"https://lpt.liepin.com/recommend","bodyLength":14443,"searchValue":"","resultCards":0,"visibleClose":1}
+{"command":"close-preview","url":"https://lpt.liepin.com/recommend","bodyLength":4717,"searchValue":"","resultCards":0,"visibleClose":0}
+```
+
+搜索与关闭命令均附 `--observe-ms 60000 --trace-methods`，退出码为 0。方法计数确认未启用 Runtime 事件或 Debugger。搜索摘要的 `visibleClose` 统计通用关闭 selector，不能单独解释为预览是否打开；预览验收在 `/recommend` 完成。切回推荐页使用一次现有 `liepin recommend`，没有重启或重登。
+
+构建与测试：`npm run build` 成功，原 `npm test` 94/94；`node --test experiments/issue23-ui/controller.test.mjs` 5/5，无跳过。新测试使用假 CDP 与合成 DOM，不访问招聘账号；独立审查未发现阻塞项。
+
 ## 结论边界
 
 本实验说明减少驱动调试订阅后，这组本机 UI 复现步骤可以完成。尚未证明这是唯一影响因素，也未覆盖 macOS、Chrome 155、对方控制器的其他分支或长期运行。它不是整个 liepin-cli 的替换驱动，不能宣布 #23 已全面解决。
