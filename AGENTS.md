@@ -93,7 +93,7 @@ RECRUIT_BROWSER_HIDDEN=true liepin <cmd>   # 或 LIEPIN_HEADLESS=true（优先�
 
 ### 风控形态有两种，都要立即停
 
-1. **页面被清空成 about:blank** —— 加载期 CDP 检测（issue #17），`safeGoto` 规避；
+1. **页面被清空成 about:blank** —— issue #17 的历史加载期问题有 `safeGoto` 处理；#23 的后续触发原因仍未确定，不保证自定义点击流程稳定。立即停止，保留浏览器，涉及发送则待人工核验，不自动重试或重发；
 2. **被 302 到 `safe.liepin.com/.../captchaPage_PC`** —— 账号被判「行为异常」，
    此时业务接口只回一个**没有 msg 的 `{"flag":0}`**（不是权益不足！），
    `assertLptPageAlive` / `lptFetch` 都会抛 `RiskControlError`（退出码 3）。

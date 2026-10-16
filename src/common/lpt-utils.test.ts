@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { assertLptPageAlive, RiskControlError, safeGoto } from './lpt-utils.js';
+import { assertLptPageAlive, lptFetch, RiskControlError, safeGoto } from './lpt-utils.js';
 
 const fakePage = (url: string) => ({ url: () => url }) as any;
 
@@ -20,6 +20,60 @@ test('assertLptPageAlive: chrome-error 页同样视为不可继续', () => {
 
 test('assertLptPageAlive: 正常 LPT 页面不抛错', () => {
   assertLptPageAlive(fakePage('https://lpt.liepin.com/search'), '发起请求');
+});
+
+function assertStopAndVerify(error: unknown): boolean {
+  assert.ok(error instanceof RiskControlError);
+  assert.match(error.message, /停止自动化/);
+  assert.match(error.message, /待核验/);
+  assert.match(error.message, /不要自动重发/);
+  assert.doesNotMatch(error.message, /请直接重跑|quit.*重跑/);
+  return true;
+}
+
+test('空白页提示要求停止并核验发送结果，不引导重跑（#23）', () => {
+  assert.throws(
+    () => assertLptPageAlive(fakePage('about:blank'), '发送后回读'),
+    assertStopAndVerify,
+  );
+});
+
+test('lptFetch: 请求前已空白时不发请求', async () => {
+  let requests = 0;
+  const page: any = {
+    url: () => 'about:blank',
+    evaluate: async () => { requests++; },
+  };
+  await assert.rejects(() => lptFetch(page, 'https://example.invalid'), assertStopAndVerify);
+  assert.equal(requests, 0);
+});
+
+test('lptFetch: 成功响应后页面清空时不返回成功，也不重试', async () => {
+  let url = 'https://lpt.liepin.com/search';
+  let requests = 0;
+  const page: any = {
+    url: () => url,
+    evaluate: async () => {
+      requests++;
+      url = 'about:blank';
+      return { ok: true, status: 200, text: '{"flag":1,"data":{}}' };
+    },
+  };
+  await assert.rejects(() => lptFetch(page, 'https://example.invalid'), assertStopAndVerify);
+  assert.equal(requests, 1);
+});
+
+test('lptFetch: 执行上下文销毁时不引导重跑或重发', async () => {
+  let requests = 0;
+  const page: any = {
+    url: () => 'https://lpt.liepin.com/search',
+    evaluate: async () => {
+      requests++;
+      throw new Error('Execution context was destroyed');
+    },
+  };
+  await assert.rejects(() => lptFetch(page, 'https://example.invalid'), assertStopAndVerify);
+  assert.equal(requests, 1);
 });
 
 /** 记录调用顺序的假 Page：mainFrame().client.send + goto */
