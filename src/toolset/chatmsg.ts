@@ -35,6 +35,54 @@ export function parsePayload(payload: string): string {
   }
 }
 
+export interface MessageSource {
+  source: 'chat' | 'exchange_request' | 'exchange_result' | 'system' | 'unknown';
+  ext_type: string | null;
+  biz_type: string | null;
+  biz_key: string | null;
+}
+
+/** 按 IM 协议识别来源；同一句话可以手动输入，不能拿正文当按钮标记。 */
+export function parseMessageSource(payload: string): MessageSource {
+  const result: MessageSource = { source: 'unknown', ext_type: null, biz_type: null, biz_key: null };
+  let data;
+  try {
+    data = JSON.parse(payload);
+  } catch {
+    return result;
+  }
+
+  const ext = data?.ext;
+  const codes = {
+    ext_type: ext?.extType,
+    biz_type: ext?.extBody?.bizType,
+    biz_key: ext?.extBody?.bizData?.bizKey,
+  };
+  for (const key of ['ext_type', 'biz_type', 'biz_key'] as const) {
+    const value = codes[key];
+    if (typeof value === 'string' || (typeof value === 'number' && Number.isFinite(value))) {
+      result[key] = String(value);
+    }
+  }
+
+  // fe-imb-pc 4.12.8：TEXT=1、SYSTEM=200、ASK_EXCHANGE=206、RESULT=207。
+  switch (result.ext_type) {
+    case '1':
+      if (result.biz_type === '' || result.biz_type === '1') result.source = 'chat';
+      break;
+    case '200':
+      result.source = 'system';
+      break;
+    case '206':
+      result.source = 'exchange_request';
+      break;
+    case '207':
+      result.source = 'exchange_result';
+      break;
+  }
+  return result;
+}
+
 export async function chatmsg(page: Page, options: ChatmsgOptions): Promise<any[]> {
   const { oppositeImId, limit = 50 } = options;
 
@@ -72,6 +120,7 @@ export async function chatmsg(page: Page, options: ChatmsgOptions): Promise<any[
       content: parsePayload(item.payload),
       time: timeStr,
       type: item.msgType || 'txt',
+      ...parseMessageSource(item.payload),
     };
   });
 }
@@ -89,6 +138,7 @@ export const chatmsgCommand = {
     { header: '内容', key: 'content', width: 60 },
     { header: '时间', key: 'time', width: 20 },
     { header: '类型', key: 'type', width: 10 },
+    { header: '来源', key: 'source', width: 18 },
   ],
   func: chatmsg,
 };

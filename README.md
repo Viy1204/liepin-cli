@@ -132,6 +132,46 @@ result=$(liepin search 前端工程师 --city 北京 --limit 5 --json)
 echo "$result" | jq '.[0].title'
 ```
 
+### 聊天消息来源
+
+`liepin chatmsg <对方imId> --json` 保留 `sender/content/time/type`，新增 `source`、
+`ext_type`、`biz_type`、`biz_key`；表格输出也显示 `source`。`type: "txt"` 只表示正文格式，
+交换请求和普通聊天都可能是文本，不能按正文判断是否点击过快捷按钮。
+
+| `source` | 协议依据 | 含义 |
+|---|---|---|
+| `chat` | `extType=1`，`bizType="1"` 或空字符串 | 普通聊天消息；可能由人工、CLI 或其他客户端发送，不证明人工键入 |
+| `exchange_request` | `extType=206`（`ASK_EXCHANGE`） | 索要/交换请求，包括微信、手机和简历；不能单靠此值判断交换的对象 |
+| `exchange_result` | `extType=207`（`RESULT`） | 交换结果消息 |
+| `system` | `extType=200`（`SYSTEM`） | 平台系统消息 |
+| `unknown` | 缺失、无法解析或尚未识别的协议码 | 无法确认；不会根据文案补成已知来源 |
+
+`ext_type` 来自 `payload.ext.extType`，`biz_type` 来自 `payload.ext.extBody.bizType`，
+`biz_key` 来自 `payload.ext.extBody.bizData.bizKey`。三个码统一输出为字符串，缺失或类型异常时为 `null`。
+未识别的码仍保留，便于日志分析；不透传整个 `bizData`。**消息 `biz_type` 与快捷按钮接口的 `bizType`
+不是同一套枚举**，不要混用。
+
+例如，微信交换请求可输出以下字段；同文普通聊天则是 `source: "chat"`、`ext_type: "1"`、
+`biz_type: "1"`，无扩展信息则是 `source: "unknown"`：
+
+```json
+{
+  "type": "txt",
+  "content": "为了方便联系，可以交换微信号吗？",
+  "source": "exchange_request",
+  "ext_type": "206",
+  "biz_type": "6",
+  "biz_key": "10001"
+}
+```
+
+协议依据（2026-10-20 核对）：猎聘公开 IM 脚本
+[`fe-imb-pc 4.12.8 vendors`](https://concat.lietou-static.com/fe-imb-pc/v6/4.12.8/js/vendors.7bd529a5.js)
+中的 `extType` 枚举、payload 解码和默认发送参数，以及
+[`common`](https://concat.lietou-static.com/fe-imb-pc/v6/4.12.8/js/common.cc1555df.js) 的消息渲染映射。
+上例结构也见于既有联系人 `lastPayload` 抓包；测试中的同文普通聊天按默认发送协议合成，
+未为验证而向真实候选人发消息。此字段识别消息的协议类别，不记录实际点击者或客户端。
+
 ### Claude Code 集成（Agent Skills）
 
 ```bash
