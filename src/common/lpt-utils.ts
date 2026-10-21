@@ -41,9 +41,9 @@ export const RISK_PAGE_HINT =
   '请勿重试：运行 `liepin login`，在弹出的浏览器窗口里完成图形验证后再继续。';
 
 const PAGE_BLANKED_HINT =
-  '猎聘安全脚本可能主动清空了页面。' +
-  '请直接重跑命令；若反复复现，`liepin quit` 后重跑，' +
-  '或在 CLI 拉起的浏览器窗口里手动打开 lpt.liepin.com 完成一次安全验证。';
+  '页面失效的触发原因尚未确定，请停止自动化，不要自动重试、刷新或重登。' +
+  '若本次涉及发送消息或打招呼，结果待核验；请人工核对聊天记录，不要自动重发。' +
+  '保留当前浏览器与登录状态，待人工检查后再决定是否恢复。';
 
 /** 能 send CDP 命令的最小会话契约（puppeteer 主会话或 mock） */
 interface CdpMinimalClient {
@@ -82,8 +82,8 @@ export async function setPageRuntime(page: Page, enabled: boolean): Promise<void
  * 实测（2026-08-19，Chrome 151）：猎聘安全脚本只在页面加载瞬间检查该页签的
  * CDP 会话是否启用着 Runtime 域，启用则把页面清成 about:blank——这就是
  * issue #17 的根因（自管浏览器实例同样 100% 复现，与挂没挂日常浏览器无关）。
- * 而加载完成后再 Runtime.enable / evaluate 完全不触发。
- * 所以 goto 前先 Runtime.disable，加载完成后立刻 enable 回来。
+ * 这是 Chrome 151 下的历史观察，不能据此解释或保证修复后续版本的全部空白问题（#23）。
+ * 此函数仅覆盖显式 goto，不覆盖自定义 controller 的点击与页面内跳转。
  */
 export async function safeGoto(page: Page, url: string): Promise<void> {
   await setPageRuntime(page, false);
