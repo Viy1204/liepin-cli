@@ -1,336 +1,343 @@
-# liepin-cli — 猎聘招聘者端自动化 CLI | 人才搜索 · 简历查看 · AI Agent 友好
+# liepin-cli
 
 [![npm version](https://img.shields.io/npm/v/@viyzhu/liepin-cli)](https://www.npmjs.com/package/@viyzhu/liepin-cli)
 [![npm downloads](https://img.shields.io/npm/dm/@viyzhu/liepin-cli)](https://www.npmjs.com/package/@viyzhu/liepin-cli)
 [![license: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](./LICENSE)
-[![GitHub stars](https://img.shields.io/github/stars/Viy1204/liepin-cli)](https://github.com/Viy1204/liepin-cli)
 
-**liepin-cli**（`@viyzhu/liepin-cli`）是开源的 **猎聘招聘者端（lpt.liepin.com）自动化命令行工具**。基于 Puppeteer / CDP 协议驱动本机 Chrome，把招聘者端的核心操作搬进终端：**人才搜索**、**简历查看**、**推荐 / 人才库管理**、**主动打招呼**、**聊天记录查看**、**职位管理**。
+liepin-cli 把猎聘招聘者端（[lpt.liepin.com](https://lpt.liepin.com/)）的操作提供为命令行命令。你可以搜索人才、读取简历、查看推荐与投递候选人、查询职位和聊天记录，也可以在确认后打招呼、发送自定义文本或索要联系方式。
 
-每条命令都设计为无状态、单步可重入，输出结构化文本；批量筛选、多步流程由调用方（脚本或 Claude / GPT / Gemini 等 AI Agent）循环编排，搭建半自动化招聘流水线。
+CLI 通过 Puppeteer/CDP 连接本机 Chrome、Edge 或 Chromium，使用独立的浏览器资料目录。查询结果默认显示为表格或字段文本，加 `--json` 可供脚本和 AI Agent 读取。多候选人循环、筛选判断和招聘进度记录由调用方组织。
+
+本项目由 [Viy1204](https://github.com/Viy1204) 维护，可独立使用，也可配合以下项目。
+
+| 项目 | 分工 |
+| --- | --- |
+| [recruiting-copilot](https://github.com/Viy1204/recruiting-copilot) | 提供岗位梳理、寻源初筛、台账日报和面试安排的 Skill 流程，并展示招聘进展看板 |
+| [Viy1204/boss-cli](https://github.com/Viy1204/boss-cli) | BOSS 直聘 CLI fork，负责 BOSS 平台操作 |
+| 本项目 | 负责猎聘招聘者端操作，账号、权限和浏览器登录态与 BOSS 分开 |
+
+## 安装与首次查询
+
+需要以下环境。
+
+- Node.js ≥ 20，建议使用仍受支持的 LTS 版本。仓库 CI 覆盖 Node.js 20 和 22。
+- 本机已安装 Chrome、Edge 或 Chromium。CLI 使用 `puppeteer-core`，不会替你下载浏览器。
+- 能正常登录猎聘招聘者端的账号。可读取的资料、沟通次数与联系方式取决于账号权限和候选人授权。
+
+下列上手命令适用于 npm 发布版。2026-10-27 核对的发布版为 `0.2.8`；工作分支中的新能力见文末[源码开发说明](#源码开发说明)。示例中的 `<resume_id>`、`<im_id>` 和 `<jobId>` 要替换为查询结果中的实际值。
+
+### 1. 安装 CLI
 
 ```bash
 npm install -g @viyzhu/liepin-cli
-liepin help
 ```
 
----
-
-## 为什么选择 liepin-cli？
-
-| 场景 | 命令 |
-| --- | --- |
-| 猎聘人才搜索 | `liepin search 前端工程师` |
-| 猎聘简历预览 | `liepin resume <简历ID>` |
-| 猎聘候选人筛选 | `liepin recommend` / `liepin talent` |
-| 主动打招呼 | `liepin greet <resume_id> --ejobId <jobId> --message "您好，方便发作品集看看吗？"` |
-| 索要手机号 / 简历 | `liepin request-phone <resume_id>` / `liepin request-resume <resume_id>` |
-| 聊天记录查看 | `liepin chatlist` / `liepin chatmsg <对方imId>` |
-| AI Agent 集成 | 子进程调用，每条命令输出结构化文本，可直接被 Agent 解析 |
-| 数据本地化 | 无中间层服务，cookie 与截图仅存在 `~/.liepin-cli/` |
-
-### 不适用场景
-
-- 仅做**公开页面**信息抓取（无需登录态）→ 用 web fetch / 通用爬虫更合适
-- **Boss 直聘** 同类需求 → 走 [boss-cli](https://github.com/Viy1204/boss-cli)
-- 投递后的**面试日程 / ATS 流转** → 那是 ATS / 招聘系统 skill 的事
-
----
-
-## 安装
-
-**要求**：Node.js ≥ 20，本机已安装 Chrome / Chromium。
+npm 包名是 `@viyzhu/liepin-cli`，安装后的命令名是 `liepin`。检查版本，应输出 `liepin-cli v<版本号>`。
 
 ```bash
-npm install -g @viyzhu/liepin-cli
-liepin help
+liepin --version
 ```
 
-> **macOS / Linux 全局安装权限问题**：系统 Node 默认全局前缀在 `/usr/local`，当前账户无写权限。建议先把全局前缀挪到用户目录（一次性配置）：
->
-> ```bash
-> mkdir -p ~/.npm-global
-> npm config set prefix ~/.npm-global
-> # macOS 默认 shell 是 zsh
-> echo 'export PATH=~/.npm-global/bin:$PATH' >> ~/.zshrc
-> # macOS bash / Linux
-> echo 'export PATH=~/.npm-global/bin:$PATH' >> ~/.bashrc
-> source ~/.zshrc  # 或 source ~/.bashrc
-> ```
->
-> 使用 `fnm` / `nvm` / `volta` 的用户可跳过此步。Windows 用户无需此步。
->
-> **Windows / Linux 找不到 Chrome**：自动探测覆盖 Chrome / Edge 的常见安装路径，
-> 若未命中请手动设置 `CHROME_PATH`（见下方「环境变量」）。
-
----
-
-## 命令一览
-
-| 命令 | 说明 |
-| --- | --- |
-| `liepin search <关键词>` | 搜索人才 |
-| `liepin chatlist` | 查看聊天列表 |
-| `liepin chatmsg <对方imId>` | 查看与某候选人的聊天记录 |
-| `liepin recommend` | 查看推荐候选人 |
-| `liepin talent` | 查看人才库 |
-| `liepin resume <简历ID>` | 查看简历详情（传 search / recommend / talent 返回的 resume_id） |
-| `liepin greet <resume_id 或 user_id> [--ejobId <职位ID>] [--message <消息>]` | **主动打招呼**：发起沟通，传 `resume_id` 时可补发自定义消息 |
-| `liepin request-phone <resume_id>` | 向候选人**索要手机号**（需先 `greet` 建会话） |
-| `liepin request-resume <resume_id>` | 向候选人**索要简历**（需先 `greet` 建会话） |
-| `liepin joblist` | 查看职位列表 |
-| `liepin quit` | 关掉常驻的浏览器（登录态保留） |
-
-完整用法与参数：`liepin help`
-
-> `search --city` 按候选人**现居住地**过滤（对应猎聘搜索的"现居住地"条件）；候选人的期望城市在 JSON 输出的 `want_city` 字段。
-
-**退出码**：`0` 成功；`1` 一般错误；`2` 登录态失效（先跑 `liepin login`）；`3` 触发风控/安全异常（立即停止自动化，人工在浏览器完成验证）。脚本和 Agent 按退出码分支即可，无需解析报错文案。
-
----
-
-## 快速上手
+查看帮助，确认能看到 `login`、`search`、`resume` 等命令。
 
 ```bash
-# 1. 登录招聘者端（弹出浏览器扫码，cookie 本地持久化）
+liepin --help
+```
+
+macOS 或 Linux 如遇全局安装权限错误，可用 fnm、nvm 或 Volta 管理 Node.js，再安装 CLI。找不到浏览器时，按[浏览器配置](#浏览器配置)设置 `CHROME_PATH`。
+
+### 2. 登录招聘者端
+
+```bash
 liepin login
-
-# 2. 搜索人才
-liepin search 前端工程师 --city 北京 --experience 3-5年
-
-# 3. 查看某候选人简历（resume_id 来自 search / recommend / talent 结果）
-liepin resume <简历ID>
-
-# 4. 查看推荐候选人
-liepin recommend
-
-# 5. 查看聊天列表 / 某会话记录（im_id 来自 chatlist）
-liepin chatlist
-liepin chatmsg <对方imId>
-
-# 6. 主动打招呼（resume_id / user_id 来自 search / recommend / talent；ejobId 来自 joblist）
-liepin greet <resume_id> --ejobId <jobId> --message "您好，方便发一份作品集看看吗？"
-
-# 7. 会话建立后索要联系方式与简历（候选人同意后，手机号会出现在 chatmsg 输出里）
-liepin request-phone <resume_id>
-liepin request-resume <resume_id>
 ```
 
-> `login` **默认复用现有登录态**：还有效就直接返回、不重启浏览器，也不用重新扫码。
-> 确实要重来一遍用 `liepin login --force`。同一天反复重登会被猎聘判「行为异常」，
-> 所以 24 小时内超过 3 次交互式登录会被拦下（同样可用 `--force` 放行）。
+CLI 打开可见的浏览器窗口，等待你扫码或输入账号密码，默认等待 120 秒。看到“登录成功”或“登录态仍然有效”后，再执行查询。需要更长的人工操作窗口时使用 `liepin login --timeout 300`。
 
----
+`login` 会先检查现有会话，仍有效时直接复用。CLI 默认限制 24 小时内最多 3 次交互式登录。`login --force` 会跳过会话复用和这项本地限制，只有人工确认确需重新登录时才使用。
 
-## 与 AI Agent 集成
+### 3. 搜索并读取一份简历
 
-liepin-cli 的每条命令都输出结构化纯文本，AI Agent 可直接解析并编排多步流程。
+搜索一批候选人。
 
 ```bash
-# Agent 调用示例
-result=$(liepin search 前端工程师 --city 北京 --limit 5 --json)
-echo "$result" | jq '.[0].title'
+liepin search "前端工程师" --city 北京 --experience 3-5年 --limit 5 --json
 ```
 
-### 聊天消息来源
-
-`liepin chatmsg <对方imId> --json` 保留 `sender/content/time/type`，新增 `source`、
-`ext_type`、`biz_type`、`biz_key`；表格输出也显示 `source`。`type: "txt"` 只表示正文格式，
-交换请求和普通聊天都可能是文本，不能按正文判断是否点击过快捷按钮。
-
-| `source` | 协议依据 | 含义 |
-|---|---|---|
-| `chat` | `extType=1`，`bizType="1"` 或空字符串 | 普通聊天消息；可能由人工、CLI 或其他客户端发送，不证明人工键入 |
-| `exchange_request` | `extType=206`（`ASK_EXCHANGE`） | 索要/交换请求，包括微信、手机和简历；不能单靠此值判断交换的对象 |
-| `exchange_result` | `extType=207`（`RESULT`） | 交换结果消息 |
-| `system` | `extType=200`（`SYSTEM`） | 平台系统消息 |
-| `unknown` | 缺失、无法解析或尚未识别的协议码 | 无法确认；不会根据文案补成已知来源 |
-
-`ext_type` 来自 `payload.ext.extType`，`biz_type` 来自 `payload.ext.extBody.bizType`，
-`biz_key` 来自 `payload.ext.extBody.bizData.bizKey`。三个码统一输出为字符串，缺失或类型异常时为 `null`。
-未识别的码仍保留，便于日志分析；不透传整个 `bizData`。**消息 `biz_type` 与快捷按钮接口的 `bizType`
-不是同一套枚举**，不要混用。
-
-例如，微信交换请求可输出以下字段；同文普通聊天则是 `source: "chat"`、`ext_type: "1"`、
-`biz_type: "1"`，无扩展信息则是 `source: "unknown"`：
-
-```json
-{
-  "type": "txt",
-  "content": "为了方便联系，可以交换微信号吗？",
-  "source": "exchange_request",
-  "ext_type": "206",
-  "biz_type": "6",
-  "biz_key": "10001"
-}
-```
-
-协议依据（2026-10-20 核对）：猎聘公开 IM 脚本
-[`fe-imb-pc 4.12.8 vendors`](https://concat.lietou-static.com/fe-imb-pc/v6/4.12.8/js/vendors.7bd529a5.js)
-中的 `extType` 枚举、payload 解码和默认发送参数，以及
-[`common`](https://concat.lietou-static.com/fe-imb-pc/v6/4.12.8/js/common.cc1555df.js) 的消息渲染映射。
-上例结构也见于既有联系人 `lastPayload` 抓包；测试中的同文普通聊天按默认发送协议合成，
-未为验证而向真实候选人发消息。此字段识别消息的协议类别，不记录实际点击者或客户端。
-
-### Claude Code 集成（Agent Skills）
+从结果数组中选择一人，将其 `resume_id` 复制到下面的命令。
 
 ```bash
-# 把 liepin-cli 注册为 Agent Skill
+liepin resume "<resume_id>" --json
+```
+
+简历结果包含工作经历、教育经历、求职意向等字段；缺失字段可能为空。
+
+`search --city` 按候选人现居住地过滤，期望城市另见结果中的 `want_city`。加 `--json` 能读到表格中未显示的标识符和字段。
+
+### 4. 查看职位、推荐和投递候选人
+
+先查看职位列表，取得 `jobId`。
+
+```bash
+liepin joblist --json
+```
+
+用该职位查看推荐候选人。`recommend` 需要可用职位，不传 `--jobId` 时使用推荐页当前职位。
+
+```bash
+liepin recommend --jobId "<jobId>" --limit 5 --json
+```
+
+查看投递到你的职位的候选人列表。
+
+```bash
+liepin talent --limit 5 --json
+```
+
+不同列表的字段名尚未统一，传给下一条命令前按下表取值。
+
+| 字段 | 来源 | 用途 |
+| --- | --- | --- |
+| `resume_id` | `search`、`talent` | 传给 `resume`、`greet`、`request-phone` 或 `request-resume` |
+| `talentId` | `recommend` | 推荐结果的简历标识，可尝试传给 `resume`；若提示无效或无权限，改用 `search` 或 `talent` 的 `resume_id` |
+| `user_id` | `search`、`recommend`、`talent`、`chatlist` | 传给 `greet` 发起默认沟通；不能代替 `chatmsg` 的参数 |
+| `im_id` | `chatlist` | 对方的 IM 标识，传给 `chatmsg` |
+| `jobId` | `joblist` | 传给 `recommend --jobId` 或 `greet --ejobId` |
+
+### 5. 查看已有会话
+
+查看最近一批会话。
+
+```bash
+liepin chatlist --limit 20 --json
+```
+
+使用结果中的 `im_id` 查看该会话的消息。
+
+```bash
+liepin chatmsg "<im_id>" --limit 50 --json
+```
+
+`chatmsg` 返回当前取到的消息，按旧到新排列。它读取最近一批消息，最多 100 条，不会自动翻完全部历史记录。消息卡片包含手机号时，`chatmsg` 也会输出该号码。
+
+## 发起沟通前先确认
+
+`greet`、`request-phone` 和 `request-resume` 会对候选人产生实际动作。执行前确认候选人、关联职位和要发送的内容；由脚本或 Agent 调用时，先取得用户对相应动作的授权。CLI 不会再弹出人工审批提示。
+
+根据已确认的动作选择执行。仅使用职位预设招呼语时运行下面的命令。
+
+```bash
+liepin greet "<resume_id>" --ejobId "<jobId>" --json
+```
+
+需要补发自定义文本时，改用带 `--message` 的命令，自定义文本必须使用简历 ID。
+
+```bash
+liepin greet "<resume_id>" --ejobId "<jobId>" --message "您好，想与您沟通这个职位，方便了解一下吗？" --json
+```
+
+已有会话且获准索要手机号时，执行下面的命令。
+
+```bash
+liepin request-phone "<resume_id>" --json
+```
+
+已有会话且获准索要简历时，执行下面的命令。
+
+```bash
+liepin request-resume "<resume_id>" --json
+```
+
+`greet` 遇到已有会话会跳过建立会话，但传了 `--message` 仍会发送文本。重复执行可能重复发消息。只有 `user_id` 时，只能发起默认沟通，不能补发自定义文本。
+
+索要操作依赖会话中的快捷按钮。结果中的 `confirmed: false` 表示未确认请求送达，需要人工核对；`success: true` 也不能替代送达确认。索要简历命令发送的是请求，不会自动下载候选人的简历附件。
+
+任何发送动作遇到空白页、断连或未确认结果，都先记为待核验。人工核对聊天记录后再决定后续动作，不要自动重发。
+
+## 命令与参数参考
+
+`liepin help`、`liepin --help` 和 `liepin <命令> --help` 当前都显示全局帮助。常用参数如下，参数名区分大小写。
+
+| 命令 | 常用参数 | 说明 |
+| --- | --- | --- |
+| `login` | `--timeout 120`、`--force` | 人工登录或复用现有会话 |
+| `search "关键词"` | `--city`、`--experience`、`--salary`、`--degree`、`--industry`、`--user-status`、`--age`、`--page`、`--limit` | 搜索人才，默认第 1 页、20 条 |
+| `resume "<简历ID>"` | 无命令专属选项 | 读取简历字段，受账号查看权限限制 |
+| `recommend` | `--jobId`、`--limit` | 查看某职位的推荐候选人，默认最多 20 条，单次最多 40 条 |
+| `talent` | `--query "姓名"`、`--page`、`--limit` | 查看投递候选人，默认第 1 页、20 条，单页最多 40 条 |
+| `joblist` | `--status 招聘中`、`--page`、`--limit` | 查看职位；状态筛选作用于本次取得的一页，单页最多 40 条 |
+| `chatlist` | `--limit 30` | 查看最近一批会话 |
+| `chatmsg "<im_id>"` | `--limit 50` | 查看最近一批消息，最多 100 条 |
+| `greet "<简历ID或user_id>"` | `--ejobId`、`--jobId`、`--message` | `--jobId` 是 `--ejobId` 的别名；自定义消息只支持简历 ID |
+| `request-phone "<简历ID>"` | 无命令专属选项 | 向已有会话的候选人索要手机号 |
+| `request-resume "<简历ID>"` | 无命令专属选项 | 向已有会话的候选人索要简历 |
+| `skill install` | 无命令专属选项 | 复制随包提供的 Agent Skill，不启动浏览器 |
+| `quit` | 无命令专属选项 | 关闭常驻浏览器，保留资料目录 |
+
+搜索筛选的取值如下。
+
+| 参数 | 示例与含义 |
+| --- | --- |
+| `--city` | `北京`、`杭州` 或城市代码，默认全国，按现居住地过滤 |
+| `--experience` | `应届`、`1-3年`、`3-5年`、`5-10年`、`10年以上` |
+| `--salary` | 月薪范围：`3K以下`、`3-5K`、`5-10K`、`10-15K`、`15-20K`、`20-30K`、`30-50K`、`50K以上` |
+| `--degree` | `大专`、`本科`、`硕士`、`博士` |
+| `--industry` | 行业名称或代码，如 `互联网`、`金融` |
+| `--user-status` | 逗号多选，如 `1,2,7`。1 离职找工作，2 在职急寻，3 在职暂不跳，4 在校不找，5 在校看机会，6 在校可到岗，7 离校找工作 |
+| `--age` | `25,35`，格式为 `低,高` |
+| `--page` | 起始页码，从 1 开始 |
+| `--limit` | 返回条数，默认 20。`search` 会按需继续翻页，达到条数、没有结果或内部翻页上限时停止 |
+
+`--salary` 未识别时会按不限薪资查询。工作经验和学历按表中的写法填写，CLI 不校验所有筛选值。`--user-status` 和 `--age` 格式错误则直接报参数错误。
+
+部分已声明参数尚未接入请求：`recommend` 的 `--jobTitle`、`--page`，以及 `talent` 的 `--salary`、`--degree` 当前不生效。`talent --city` 直接使用城市代码，`talent --experience` 使用 `3-5` 这样的数字范围，不能照搬 `search` 的全部筛选写法。
+
+### 输出与退出码
+
+查询命令加 `--json` 后，标准输出为 JSON 数组或对象，错误信息写入标准错误。建议把 `--json` 放在命令末尾。
+
+npm `0.2.8` 的 `chatmsg --json` 还包含消息来源字段 `source`，可区分 `chat`、`exchange_request`、`exchange_result`、`system` 和 `unknown`；`ext_type`、`biz_type`、`biz_key` 保留协议字段。来源根据协议字段判断，不按消息正文猜测。
+
+`login --json` 仍会输出进度文本，不能直接把整段标准输出当作 JSON 解析。登录超时、登录频率限制或请求按钮不可用时，命令可能以退出码 `0` 返回 `success: false`，调用方还需检查结果字段。
+
+| 退出码 | 含义 | 后续处理 |
+| --- | --- | --- |
+| `0` | 命令正常返回 | 对动作结果继续检查 `success`、`confirmed` 等字段 |
+| `1` | 参数、权限、网络等一般错误 | 检查具体错误，不盲目重复发送动作 |
+| `2` | 登录态失效 | 人工通过 `liepin login` 恢复登录 |
+| `3` | 风控、安全验证或页面失效 | 停止自动化，按[故障处理](#故障处理)人工核验 |
+
+## 接入 AI Agent
+
+在终端完成 CLI 安装和登录后，可安装随包提供的 Skill。
+
+```bash
 liepin skill install
 ```
 
-卸载目前不支持子命令，手动删除目录即可：`rm -rf ~/.agents/skills/liepin-cli`。
+默认目标是 `~/.claude/skills/liepin-cli/`，Windows 对应 `%USERPROFILE%\.claude\skills\liepin-cli\`。新开 Claude Code 会话后，可让 Agent 按该 Skill 调用 CLI。CLI 升级后，重新执行安装命令可同步 Skill 文件。
 
-安装后**默认复制到 `~/.agents/skills/liepin-cli/`**（Windows：`%USERPROFILE%\.agents\skills\liepin-cli`）。重启 Claude Code 后，在对话中说"用 liepin 搜前端"即可触发。
+随包 Skill 的示例命令使用源码目录路径 `node /tmp/liepin-cli/dist/cli/index.js`。全局安装的用户需要让 Agent 改用 `liepin` 命令，或把示例路径替换为实际安装位置；直接照抄示例路径会找不到 CLI。
 
-> 其他兼容 Agent（Codex、Pi、OpenCode、MiniMax Code、WorkBuddy、Cherry Studio）请参考各自文档的 skills 目录位置，复制同一份 `SKILL.md` 即可，无需改写。
+其他支持 Agent Skills 的工具，按各自文档选择技能目录，通过环境变量 `LIEPIN_SKILL_TARGET_DIR` 指定完整目标目录后再安装。当前只支持安装，卸载时手动删除已安装的 `liepin-cli` 技能目录。
 
----
+需要组织岗位要求、候选人评估、台账和每日招聘流程时，使用 [recruiting-copilot 的安装与初始化说明](https://github.com/Viy1204/recruiting-copilot)。平台命令仍由 liepin-cli 执行，外发操作仍需要用户授权。
 
-## 环境变量
+## 浏览器配置
 
-| 变量名 | 说明 | 默认值 |
-|--------|------|--------|
-| `CHROME_PATH` | Chrome/Edge 可执行文件路径；Windows / macOS / Linux 常见安装路径会自动检测 | - |
-| `LIEPIN_USER_DATA_DIR` | 用户数据目录 | `~/.liepin-cli/user-data` |
-| `LIEPIN_SCREENSHOT_DIR` | 截图目录 | `~/.liepin-cli/screenshots` |
-| `RECRUIT_BROWSER_HIDDEN` | 招聘工具链共读的**统一覆盖**开关（boss-cli / liepin-cli / DSH 面板都认）；设 `true` 让窗口隐藏。不设时各 CLI 用自己的默认 | 不设（默认有头） |
-| `LIEPIN_HEADLESS` | 本 CLI 专属覆盖项，优先级高于 `RECRUIT_BROWSER_HIDDEN` | 跟随上一行 |
-| `LIEPIN_BROWSER_REMOTE_DEBUGGING_PORT` | 固定 CDP 调试端口（浏览器跨命令常驻靠它） | `53471` |
-| `LIEPIN_SPAWN_BREAKAWAY` | 仅 Windows：经 WMI 拉起浏览器，使其脱离调用方的 Job Object（AI Agent 后台任务里必需，见下方常见问题）。设 `false` 回退到普通 spawn | `true` |
-| `LIEPIN_PROXY` | 代理服务器 | - |
-| `LIEPIN_DEBUG` | 调试模式 | `false` |
+浏览器默认可见，首次执行平台命令时启动，命令结束只断开连接。后续命令复用固定端口上的同一浏览器。运行 `liepin quit` 才会主动关闭它。
 
-### 浏览器默认可见，怎么把它藏起来？
+资料目录会保留，但会话 Cookie 可能在浏览器关闭后失效，因此不能保证 `quit` 后仍保持登录。后续若遇退出码 `2`，再执行 `liepin login`。
 
-**默认有头**（与 boss-cli 一致）。代价是有头窗口一启动就抢走键盘焦点，会打断你手上的事；
-想藏起来：
+CLI 自动检查 Windows、macOS 和 Linux 的常见安装路径。未找到浏览器时，设置可执行文件路径。
+
+macOS 使用下面的命令。
 
 ```bash
-RECRUIT_BROWSER_HIDDEN=true liepin recommend   # 共读开关，boss / liepin / 面板都认
-LIEPIN_HEADLESS=true liepin recommend          # 只影响 liepin-cli，优先级更高
-```
-
-⚠️ **但先读下一节再决定要不要藏**——无头的 UA 会自报 `HeadlessChrome`。
-
-注意：**换了变量不会让已经在跑的那只浏览器换模式**。端口上已有实例会被直接复用，得先
-`liepin quit`，下条命令才会按新模式重启。
-
-想看浏览器在做什么但不要窗口抢焦点，用 [recruiting-copilot](https://github.com/Viy1204/recruiting-copilot)
-的 DSH「招聘浏览器」面板（默认折叠、默认只读，操作请走 CLI）。
-
-#### 为什么默认有头（2026-09-21 翻的默认，此前是无头）
-
-- **无头的 User-Agent 里带 `HeadlessChrome/<ver>`**，等于每个请求都自报「我是自动化工具」。
-  本 CLI **刻意不覆盖 UA**（伪造的 UA 与 sec-ch-ua Client Hints、真实平台互相矛盾，本身
-  就是更明显的指纹），所以这条没法靠改 UA 绕过。BOSS 侧正是踩了它：账号被限制 **web 端
-  登录 24 小时**，页面文案写「系统检测到您的账号存在使用第三方招聘管理系统、插件、外挂、
-  软件等辅助工具」；另一个团队用默认有头长期无事，AI 擅自改走无头之后当天封号。
-- **2026-09-20 猎聘侧实测**：连续无头调用后账号被判「行为异常」，302 到
-  `safe.liepin.com/.../captchaPage_PC`，业务接口开始静默拦截（第二种风控形态）。
-
-⚠️ 这**不等于**已证明「无头是唯一成因」——调用频次、issue #21 的重登循环都可能有份。
-但 UA 自报是确定存在的送分题，先摘掉。
-
-0819 定无头时的另一条结论**仍然成立**：猎聘安全脚本在页面加载瞬间检测该页签的 CDP 会话
-是否启用着 Runtime 域，启用则把页面清成 about:blank——这条**与有头/无头无关**，照旧由
-`safeGoto` 在导航期间临时关闭 Runtime 规避。
-
-`RECRUIT_BROWSER_HIDDEN` 的语义仍是**统一覆盖开关**而不是「提供默认值」：不设时两个 CLI
-各用自己的默认（现在两家都是有头），显式设了才把两家拉平。
-
-### 浏览器跨命令常驻
-
-命令结束只断开 CDP，**不关浏览器**：下条命令直连同一只实例（同一登录态、同一标签），
-省掉反复启动的开销，DSH 面板的镜像也才有东西可连。
-
-跑完招聘想释放内存就 `liepin quit`。判断在跑的那只是什么模式：
-
-```bash
-curl http://127.0.0.1:53471/json/version   # User-Agent 含 HeadlessChrome 即无头
-```
-
----
-
-## 常见问题
-
-### Chrome 未找到（自动探测失败时手动指定）
-
-```bash
-# macOS
 export CHROME_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-# Linux
+```
+
+Linux 根据安装位置设置路径。
+
+```bash
 export CHROME_PATH="/usr/bin/google-chrome"
-# Windows (PowerShell)
+```
+
+Windows PowerShell 使用下面的命令。
+
+```powershell
 $env:CHROME_PATH="C:\Program Files\Google\Chrome\Application\chrome.exe"
 ```
 
-### 登录失败 / 登录态失效
+可用环境变量如下。
 
-1. 重新跑 `liepin login`，在弹出的浏览器里扫码登录招聘者端
-2. 确认 `LIEPIN_USER_DATA_DIR` 目录正确（cookie 持久化在此）
-3. 命令报"返回了 HTML / 反爬挑战"多为登录态过期，重新 `liepin login` 即可
+| 变量 | 作用 | 默认值 |
+| --- | --- | --- |
+| `CHROME_PATH` | 浏览器可执行文件路径，优先于 `PUPPETEER_EXECUTABLE_PATH` | 自动检测 |
+| `PUPPETEER_EXECUTABLE_PATH` | 浏览器可执行文件路径的备选配置 | 自动检测 |
+| `LIEPIN_USER_DATA_DIR` | 猎聘独立浏览器资料目录 | `~/.liepin-cli/user-data` |
+| `LIEPIN_CONFIG_DIR` | 配置与交互式登录历史目录 | `~/.liepin-cli` |
+| `LIEPIN_BROWSER_REMOTE_DEBUGGING_PORT` | 常驻浏览器的调试端口 | `53471` |
+| `RECRUIT_BROWSER_HIDDEN` | 招聘工具链共享的隐藏窗口开关，`true` 使用无头模式 | 未设置，使用可见窗口 |
+| `LIEPIN_HEADLESS` | liepin-cli 专属开关，优先于上一项 | 跟随上一项 |
+| `LIEPIN_SPAWN_BREAKAWAY` | Windows 默认尝试经 WMI 启动浏览器，使其不随调用方进程退出；`false` 使用普通启动方式 | `true` |
+| `LIEPIN_PROXY` | 浏览器代理服务器 | 未设置 |
+| `LIEPIN_SKILL_TARGET_DIR` | Skill 安装目标目录 | `~/.claude/skills/liepin-cli` |
 
-### 提示「检测到您当前网络地址在境外」
+如果配置目录中有 `config.json`，其中的 `chromePath`、`userDataDir` 等同名配置会覆盖相应默认值。改变启动配置不会切换已运行的实例；确需切换时，由用户结束当前会话并运行 `liepin quit`，下一条命令再按新配置启动。
 
-猎聘封境外 IP。**先关 VPN / 代理**（含 Outline、Clash TUN 模式这类整机隧道），或将
-`*.liepin.com` 分流为直连，再重跑命令。用 VPN 期间即使能扫码登录，BFF 接口也会拦截。
+`LIEPIN_SCREENSHOT_DIR` 和 `LIEPIN_DEBUG` 当前只在配置中定义，现有 CLI 命令未据此生成截图或额外调试日志。没有独立的截图命令，也没有生效的 `--debug` 选项。
 
-### 页面被清空为 about:blank
+## 故障处理
 
-0.2.4 起已根治：猎聘安全脚本会在页面加载瞬间检测 CDP 会话的 Runtime 域并清页，
-现在所有导航在加载期间临时关闭 Runtime（`safeGoto`）。旧版本遇到请升级。
+### 登录态失效
 
-### Windows：浏览器窗口自己关掉 + 每次启动弹「Chrome 未正确关闭」
+退出码 `2` 表示检测到登录态失效。执行一次 `liepin login`，在窗口内完成登录，再检查结果。不要把重复重登作为所有错误的处理办法。
 
-0.2.6 起已修复（issue #21）。根因不在 CLI 的关闭逻辑，而在**进程归属**：从 AI Agent 的
-后台任务里调用 CLI 时，宿主通常把整棵进程树放进一个 `KILL_ON_JOB_CLOSE` 的 Job Object，
-而 `spawn({ detached: true })` 只是新建进程组、**逃不出 Job**——CLI 一结束，Chrome 就被
-连带终止，于是窗口"自己关了"、profile 留下 `exit_type: Crashed`、下次启动弹恢复气泡。
+### 出现验证码或安全验证页
 
-现在 Windows 上改经 WMI `Win32_Process.Create` 拉起浏览器（进程归 WmiPrvSE，不在调用方
-的 Job 里），并加 `--hide-crash-restore-bubble` 兜底。要回退到旧行为设 `LIEPIN_SPAWN_BREAKAWAY=false`。
+退出码 `3` 表示需要停止自动化。由用户在现有可见窗口中检查并完成验证，确认后再决定是否恢复。需要 CLI 等待人工验证时，可由用户主动执行 `liepin login --timeout 300`。
 
-顺带说明为什么它会连累登录：`_e_ld_auth_` / `XSRF-TOKEN` 都是会话 cookie（`is_persistent=0`），
-浏览器进程一没就等于退出登录，于是又得重新扫码——而重新扫码以前每次都会再关一次浏览器。
-这个自我强化的循环正是账号被判「行为异常」的主因，0.2.6 一并断掉了（见下一条）。
+返回 HTML 或无说明的 `{"flag":0}` 时，CLI 也会按安全异常处理，不能直接解释为登录过期或权益不足。账号权限、操作次数和页面状态要分别核对。
 
-### 账号被猎聘判「行为异常」，弹安全验证
+### 页面变为 about:blank 或操作中断连
 
-页面会被 302 到 `safe.liepin.com/.../captchaPage_PC`。此时**所有业务接口都被静默拦截**，
-`resume` 这类命令只会收到一个没有任何说明的 `{"flag":0}`——那不是简历权益不足，是风控。
+立即停止并保留浏览器。不要自动刷新、重登、重启或循环试探。涉及打招呼、发消息或索要资料时，结果记为待核验，人工检查聊天记录后再决定是否继续。
 
-- 0.2.6 起 CLI 直接识别这两种形态并以**退出码 3** 立即失败，附「请勿重试」提示，
-  不再让脚本误判成权限问题、也不再对着验证页干等到超时；
-- 处理办法只有人工过验证：`liepin login`（会切出有头窗口），在窗口里点「点击验证」完成滑块；
-- **不要反复重登**。`login` 默认复用现有会话，24 小时内超过 3 次交互式登录会被拦下。
+空白页问题的历史复现见 [Viy1204/liepin-cli#23](https://github.com/Viy1204/liepin-cli/issues/23)。尚未合并的页面会话修复及[验证记录](https://github.com/Viy1204/liepin-cli/blob/95ccd3385e516a71927284f992756048e7265bbe/experiments/issue23-ui/2026-10-27-page-session.md)见 [Viy1204/liepin-cli#24](https://github.com/Viy1204/liepin-cli/pull/24)。一次环境下验证通过不能证明所有 Chrome 版本或自定义页面流程都稳定，升级也不能代替出错后的停止与核验。
 
-### 被检测为自动化
+### 提示网络地址在境外
 
-如频繁被风控拦截，请开 issue 带上 `liepin --debug` 输出，maintainer 协助排查。
+检查当前 VPN、系统代理和 `LIEPIN_PROXY` 配置，确认浏览器的实际访问路径符合平台要求。先人工确认招聘者页面能正常访问，再恢复 CLI 操作。
 
----
+### Windows 上浏览器随命令结束关闭
 
-## 开发
+默认启动方式会尝试通过 PowerShell/WMI 创建常驻浏览器，失败时会回退到普通启动。检查浏览器是否确实常驻，以及系统是否允许 WMI 启动；`LIEPIN_SPAWN_BREAKAWAY=false` 会禁用这项处理。
+
+反馈问题时附 CLI、Node.js、浏览器版本、操作命令和退出码，并去掉候选人标识、消息正文、Cookie 和令牌。可在 [GitHub Issues](https://github.com/Viy1204/liepin-cli/issues) 提交。
+
+## 源码开发说明
+
+克隆仓库。
 
 ```bash
 git clone https://github.com/Viy1204/liepin-cli.git
-cd liepin-cli
-npm install
-npm run build && npm test
 ```
 
-发版：在 `main` 上 `npm version patch`（自动 bump + 打 tag）后 `git push --tags`，GitHub Actions 经 **npm Trusted Publishing (OIDC)** 自动发布，无需 npm token（见 `.github/workflows/publish.yml`）。
+进入源码目录。
 
----
+```bash
+cd liepin-cli
+```
+
+安装开发依赖。
+
+```bash
+npm install
+```
+
+编译 CLI。
+
+```bash
+npm run build
+```
+
+检查源码构建出的帮助。
+
+```bash
+node dist/cli/index.js --help
+```
+
+运行本地测试。
+
+```bash
+npm test
+```
+
+工作分支可能包含尚未发布的改动，先核对所检出的分支和 `package.json`。[Viy1204/liepin-cli#24](https://github.com/Viy1204/liepin-cli/pull/24) 中的页面会话实现及 `chatmsg --resolve-resume` 尚未合并到默认分支，也未包含在 npm `0.2.8`。该选项拟在目标消息包含简历卡片时，增加一次只读请求解析当前 `resume_id`；历史卡片的 `card_resume_id` 不能直接当作当前简历 ID。npm 上手流程不依赖这项能力。
+
+开发使用的 CI 和发布配置分别见 [test.yml](.github/workflows/test.yml) 与 [publish.yml](.github/workflows/publish.yml)。发布工作流由 `v*` 标签触发，运行构建和测试后使用 npm Trusted Publishing 发布。
 
 ## 许可证
 
-GPL-3.0，详见 [LICENSE](./LICENSE)。
-
----
-
-## 相关项目
-
-- [boss-cli](https://github.com/Viy1204/boss-cli) — Boss 直聘自动化 CLI
-- [opencli](https://github.com/jackwener/opencli) — 开源 CLI 框架
+[GPL-3.0](./LICENSE)。
