@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node: [20, 22]
+        node: [20, 22, 24]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -21,3 +21,5 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm test
+      - run: node --test experiments/issue23-ui/controller.test.mjs
+        if: matrix.node == 24

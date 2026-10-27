@@ -7,12 +7,13 @@
  * 入参是对方 imId（chatlist 返回的 im_id），不是旧的 chatId。
  */
 
-import { Page } from 'puppeteer-core';
+import type { RecruitPage } from '../browser/recruit-page.js';
 import { LIEPIN_LPT_API, lptFetch, navigateToLpt, readLptImId } from '../common/lpt-utils.js';
 
 export interface ChatmsgOptions {
   oppositeImId: string;
   limit?: number;
+  'resolve-resume'?: boolean | string;
 }
 
 /** 中国大陆手机号：候选人同意索要后，号码就落在卡片消息的 payload 里 */
@@ -83,8 +84,9 @@ export function parseMessageSource(payload: string): MessageSource {
   return result;
 }
 
-export async function chatmsg(page: Page, options: ChatmsgOptions): Promise<any[]> {
+export async function chatmsg(page: RecruitPage, options: ChatmsgOptions): Promise<any[]> {
   const { oppositeImId, limit = 50 } = options;
+  const resolveResume = options['resolve-resume'] === true || options['resolve-resume'] === 'true';
 
   if (!oppositeImId) {
     throw new Error('对方 imId 不能为空（取 chatlist 结果里的 im_id）');
@@ -109,8 +111,47 @@ export async function chatmsg(page: Page, options: ChatmsgOptions): Promise<any[
   }
 
   const list = data.data?.list || [];
+  const cards = list.map((item: any) => {
+    try {
+      return JSON.parse(item.payload || '{}')?.ext?.extBody?.bizData?.resumeInfo;
+    } catch {
+      return undefined;
+    }
+  });
+  let currentResumeId = '';
+  if (resolveResume) {
+    const targetCards = cards.filter((info: any) => info?.imId === oppositeImId);
+    if (targetCards.length === 0) {
+      throw new Error(`当前 ${list.length} 条聊天记录中没有属于该候选人的简历卡片，无法解析 resume_id`);
+    }
+    const userIds = new Set<string>();
+    for (const info of targetCards) {
+      if (typeof info.userId !== 'string' || !info.userId.trim()) {
+        throw new Error('简历卡片缺少可解析的 userId，无法获取当前 resume_id');
+      }
+      userIds.add(info.userId.trim());
+    }
+    if (userIds.size !== 1) {
+      throw new Error('同一会话的简历卡片 userId 不一致，无法解析 resume_id');
+    }
+
+    const userId = [...userIds][0];
+    const resolved = await lptFetch(page, `${LIEPIN_LPT_API}/api/com.liepin.im.b.common.get-resume-id`, {
+      body: `usercIdEncode=${encodeURIComponent(userId)}`,
+      clientId: '40342',
+    });
+    if (resolved.flag !== 1) {
+      throw new Error(`解析简历 ID 失败: ${resolved.msg || resolved.message || JSON.stringify(resolved).slice(0, 200)}`);
+    }
+    currentResumeId = typeof resolved.data === 'string' ? resolved.data.split('&')[0].trim() : '';
+    if (!currentResumeId) {
+      throw new Error('解析简历 ID 失败：接口 data 中没有非空的简历 ID');
+    }
+  }
+
   // 接口按时间倒序返回，翻转成正序（旧→新）方便阅读
-  return list.slice().reverse().map((item: any) => {
+  return list.map((item: any, index: number) => {
+    const card = cards[index];
     const ts = item.msgTime ? new Date(Number(item.msgTime)) : null;
     const timeStr = ts
       ? `${ts.getFullYear()}-${String(ts.getMonth() + 1).padStart(2, '0')}-${String(ts.getDate()).padStart(2, '0')} ${String(ts.getHours()).padStart(2, '0')}:${String(ts.getMinutes()).padStart(2, '0')}`
@@ -121,8 +162,10 @@ export async function chatmsg(page: Page, options: ChatmsgOptions): Promise<any[
       time: timeStr,
       type: item.msgType || 'txt',
       ...parseMessageSource(item.payload),
+      ...(card?.resumeId ? { card_resume_id: card.resumeId } : {}),
+      ...(currentResumeId && card?.imId === oppositeImId ? { resume_id: currentResumeId } : {}),
     };
-  });
+  }).reverse();
 }
 
 /** 聊天消息命令定义 */
@@ -132,6 +175,7 @@ export const chatmsgCommand = {
   args: [
     { name: 'oppositeImId', type: 'string', required: true, positional: true, help: '对方 imId（chatlist 返回的 im_id）' },
     { name: 'limit', type: 'int', default: 50, help: '返回条数（1-100）' },
+    { name: 'resolve-resume', type: 'bool', default: false, help: '从目标简历卡片解析当前 resume_id（增加一次只读请求）' },
   ],
   columns: [
     { header: '发送者', key: 'sender', width: 8 },
@@ -139,6 +183,8 @@ export const chatmsgCommand = {
     { header: '时间', key: 'time', width: 20 },
     { header: '类型', key: 'type', width: 10 },
     { header: '来源', key: 'source', width: 18 },
+    { header: '简历ID', key: 'resume_id', width: 23, noTruncate: true },
+    { header: '卡片历史ID', key: 'card_resume_id', width: 23, noTruncate: true },
   ],
   func: chatmsg,
 };

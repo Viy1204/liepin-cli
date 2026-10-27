@@ -2,14 +2,14 @@
  * 猎聘聊天列表命令 - 招聘者端
  */
 
-import { Page } from 'puppeteer-core';
+import type { RecruitPage } from '../browser/recruit-page.js';
 import { LIEPIN_LPT_API, navigateToLpt, lptFetch, readLptImId } from '../common/lpt-utils.js';
 
 export interface ChatlistOptions {
   limit?: number;
 }
 
-export async function chatlist(page: Page, options: ChatlistOptions): Promise<any[]> {
+export async function chatlist(page: RecruitPage, options: ChatlistOptions): Promise<any[]> {
   const { limit = 30 } = options;
 
   // 落到 LPT 同源页面拿 cookie/imId（IM 数据走 api-lpt 接口，不依赖页面 DOM）；

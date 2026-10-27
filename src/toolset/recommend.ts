@@ -2,7 +2,7 @@
  * 猎聘推荐候选人命令
  */
 
-import { Page } from 'puppeteer-core';
+import type { RecruitPage } from '../browser/recruit-page.js';
 import { RECOMMEND_COLUMNS } from '../common/utils.js';
 import { LIEPIN_LPT_API, lptFetch, navigateToLpt } from '../common/lpt-utils.js';
 
@@ -62,7 +62,7 @@ function mapRecommendCandidate(item: any) {
   };
 }
 
-export async function recommend(page: Page, options: RecommendOptions): Promise<any[]> {
+export async function recommend(page: RecruitPage, options: RecommendOptions): Promise<any[]> {
   const { jobId = '', limit = 20 } = options;
 
   // 导航到推荐页面

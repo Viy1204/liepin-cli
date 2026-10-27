@@ -7,7 +7,7 @@
  * talentId 即 search 返回的 resume_id（resIdEncode）。
  */
 
-import { Page } from 'puppeteer-core';
+import type { RecruitPage } from '../browser/recruit-page.js';
 import { LIEPIN_LPT_API, lptFetch, navigateToLpt } from '../common/lpt-utils.js';
 
 export interface ResumeOptions {
@@ -18,7 +18,7 @@ function joinLines(items: any[], fmt: (it: any) => string): string {
   return (items || []).map(fmt).filter(Boolean).join('\n');
 }
 
-export async function resume(page: Page, options: ResumeOptions): Promise<any> {
+export async function resume(page: RecruitPage, options: ResumeOptions): Promise<any> {
   const { talentId } = options;
 
   if (!talentId) {

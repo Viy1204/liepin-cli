@@ -2,7 +2,7 @@
  * 猎聘人才搜索命令 - 招聘者端
  */
 
-import { Page } from 'puppeteer-core';
+import type { RecruitPage } from '../browser/recruit-page.js';
 import {
   WORKYEAR_CODES, DEGREE_CODES, INDUSTRY_CODES,
   resolveCity, resolveCode, resolveSalary, sleepRandom,
@@ -195,7 +195,7 @@ export function mapJobCard(item: any, rank: number) {
   };
 }
 
-export async function search(page: Page, options: SearchOptions): Promise<any[]> {
+export async function search(page: RecruitPage, options: SearchOptions): Promise<any[]> {
   const {
     query,
     city = '全国',

@@ -10,19 +10,20 @@
  * 短时间内反复重启 + 重新扫码正是猎聘判「行为异常」的输入。
  */
 
-import { Page } from 'puppeteer-core';
+import type { RecruitPage } from '../browser/recruit-page.js';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { sleep } from '../common/utils.js';
 import {
   LIEPIN_LPT_API,
   lptFetch,
+  AuthExpiredError,
   RiskControlError,
+  PageUnavailableError,
   RISK_PAGE_HINT,
   assertPageNotBlanked,
   isRiskPageUrl,
   safeGoto,
-  setPageRuntime,
 } from '../common/lpt-utils.js';
 import { CdpBrowser, closeRemoteBrowser, probeRemoteHeadless } from '../browser/cdp_browser.js';
 import { config } from '../config.js';
@@ -90,7 +91,8 @@ function hoursUntilQuotaFrees(logins: number[], now: number): number {
  * 于是 login 打印 ✅ 而下一条命令立刻 "LPT 请求失败: Failed to fetch"。
  * 直接打下游命令真正依赖的鉴权接口，成功即成功，不存在误判。
  */
-async function probeSession(page: Page): Promise<SessionState> {
+async function probeSession(page: RecruitPage): Promise<SessionState> {
+  page.assertAvailable();
   // 已经被 302 到安全中心：接口全是跨域必失败，不必再打一次，省一次请求
   if (isRiskPageUrl(page.url())) return 'risk';
 
@@ -109,41 +111,34 @@ async function probeSession(page: Page): Promise<SessionState> {
     const data = await lptFetch(page, SESSION_PROBE_URL, { body: form.toString() });
     return data?.flag === 1 ? 'ok' : 'anonymous';
   } catch (e) {
+    if (e instanceof PageUnavailableError) throw e;
+    assertPageNotBlanked(page, '探测登录态');
     if (e instanceof RiskControlError) {
       return 'risk';
     }
-    return 'anonymous';
+    if (e instanceof AuthExpiredError) return 'anonymous';
+    throw e;
   }
 }
 
-/** 探测时临时打开 Runtime：等待期间要保持关闭，否则新页面加载会被安全脚本清页 */
-async function probeWithRuntime(page: Page): Promise<SessionState> {
-  await setPageRuntime(page, true);
-  try {
-    await sleep(300); // 等 Runtime.enable 回放执行上下文，evaluate 才有 context 可用
-    return await probeSession(page);
-  } finally {
-    await setPageRuntime(page, false);
-  }
-}
-
-/** 是否还停在登录页：只看 URL。等待期间 Runtime 是关闭的，不能 evaluate 读 DOM */
-function onLoginPage(page: Page): boolean {
+/** 是否还停在登录页：只看 URL。 */
+function onLoginPage(page: RecruitPage): boolean {
   return /\/login|\/signin|\/passport/.test(page.url());
 }
 
-export async function login(page: Page, options: LoginOptions): Promise<any> {
+export async function login(page: RecruitPage, options: LoginOptions): Promise<any> {
   const { timeout = 120 } = options;
   const force = options.force === true || String(options.force) === 'true';
 
   console.log('正在打开猎聘招聘者端...');
   await safeGoto(page, 'https://lpt.liepin.com/');
   await sleep(2000);
+  page.assertAvailable();
 
   // 先看现有登录态还在不在：在就什么都不用动。会话 cookie 是 is_persistent=0，
   // 关掉浏览器就等于退出登录，所以"能不重启就不重启"直接决定了要不要再扫一次码。
   // 已经被弹回登录页就不必打接口了，肯定是未登录，省一次请求。
-  const initial = onLoginPage(page) ? 'anonymous' : await probeWithRuntime(page);
+  const initial = onLoginPage(page) ? 'anonymous' : await probeSession(page);
   if (initial === 'ok' && !force) {
     console.log('');
     console.log('✅ 登录态仍然有效，无需重新登录（浏览器未重启）');
@@ -180,7 +175,9 @@ export async function login(page: Page, options: LoginOptions): Promise<any> {
   let activePage = page;
   let restarted: CdpBrowser | null = null;
   try {
-    if ((await probeRemoteHeadless()) === true) {
+    const headless = await probeRemoteHeadless();
+    activePage.assertAvailable();
+    if (headless === true) {
       console.log('当前浏览器是无头的，正在切换成有头窗口以便扫码...');
       await closeRemoteBrowser();
       process.env.LIEPIN_HEADLESS = 'false';
@@ -190,6 +187,7 @@ export async function login(page: Page, options: LoginOptions): Promise<any> {
       await sleep(2000);
     }
 
+    activePage.assertAvailable();
     recordLogin(now);
     return await waitForLogin(activePage, timeout);
   } finally {
@@ -198,7 +196,7 @@ export async function login(page: Page, options: LoginOptions): Promise<any> {
 }
 
 /** 等人在窗口里完成扫码 / 安全验证，期间周期性探测鉴权接口 */
-async function waitForLogin(page: Page, timeout: number): Promise<any> {
+async function waitForLogin(page: RecruitPage, timeout: number): Promise<any> {
   console.log('');
   console.log('═══════════════════════════════════════════════════════════');
   console.log('  请在浏览器中完成登录（扫码或账号密码）');
@@ -206,11 +204,6 @@ async function waitForLogin(page: Page, timeout: number): Promise<any> {
   console.log('  登录成功后会自动检测');
   console.log('═══════════════════════════════════════════════════════════');
   console.log('');
-
-  // 等待扫码期间保持 Runtime 关闭：扫码成功后的跳转是一次新页面加载，
-  // 此时若 Runtime 开着会被安全脚本清页（与 issue #17 同一机制，见 safeGoto）。
-  // 只在探测登录态时短暂打开，探完立即关闭。
-  await setPageRuntime(page, false);
 
   const startTime = Date.now();
   const timeoutMs = timeout * 1000;
@@ -221,6 +214,7 @@ async function waitForLogin(page: Page, timeout: number): Promise<any> {
   let lastState: SessionState = 'anonymous';
 
   while (Date.now() - startTime < timeoutMs) {
+    page.assertAvailable();
     const elapsed = Math.floor((Date.now() - startTime) / 1000);
     process.stdout.write(`\r  等待登录中... ${elapsed}s / ${timeout}s`);
 
@@ -239,7 +233,7 @@ async function waitForLogin(page: Page, timeout: number): Promise<any> {
     // 还停在登录页就没必要打接口，省一次请求
     if (!onLoginPage(page) && Date.now() - lastProbe >= PROBE_INTERVAL_MS) {
       lastProbe = Date.now();
-      lastState = await probeWithRuntime(page);
+      lastState = await probeSession(page);
 
       if (lastState === 'risk' && !riskNoticeShown) {
         riskNoticeShown = true;
@@ -264,6 +258,7 @@ async function waitForLogin(page: Page, timeout: number): Promise<any> {
     await sleep(1000);
   }
 
+  page.assertAvailable();
   console.log('');
   if (lastState === 'risk' || riskNoticeShown) {
     console.log('❌ 登录未完成：卡在猎聘安全验证上');

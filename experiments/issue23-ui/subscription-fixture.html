@@ -1,0 +1,16 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>CLI subscription fixture</title>
+<body>
+  <h1>页面连接订阅检查</h1>
+  <button id="increment" type="button">增加计数</button>
+  <output id="count">0</output>
+  <a id="anchor" href="#next">同页跳转</a>
+  <script>
+    document.querySelector('#increment').addEventListener('click', () => {
+      const output = document.querySelector('#count');
+      output.textContent = String(Number(output.textContent) + 1);
+    });
+    window.runProbe = () => console.log('fixture console message');
+  </script>
+</body>

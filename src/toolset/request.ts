@@ -9,7 +9,7 @@
  * 会话必须已经存在——先 `liepin greet`，再调这两条命令，否则按钮不渲染。
  */
 
-import { Page } from 'puppeteer-core';
+import type { RecruitPage } from '../browser/recruit-page.js';
 import {
   LIEPIN_LPT_API,
   lptFetch,
@@ -17,7 +17,7 @@ import {
   openResumeImPanel,
   readLptImId,
 } from '../common/lpt-utils.js';
-import { sleepRandom } from '../common/utils.js';
+import { AuthExpiredError, RiskControlError, sleepRandom } from '../common/utils.js';
 
 export type RequestKind = 'phone' | 'resume';
 
@@ -37,7 +37,7 @@ const ACTION_LABEL: Record<RequestKind, string> = {
 };
 
 /** 取会话里最新一条消息的 id，用来判断点击之后到底有没有发出去 */
-async function latestMessageId(page: Page, oppositeImId: string): Promise<string> {
+async function latestMessageId(page: RecruitPage, oppositeImId: string): Promise<string> {
   if (!oppositeImId) return '';
   const imId = await readLptImId(page);
   if (!imId) return '';
@@ -55,7 +55,7 @@ async function latestMessageId(page: Page, oppositeImId: string): Promise<string
  * 点完按钮后可能弹二次确认框。只在真的出现了带确认字样的按钮时才点，
  * 没有就什么都不做——猜着点弹窗比不点更危险。
  */
-async function confirmDialogIfPresent(page: Page): Promise<boolean> {
+async function confirmDialogIfPresent(page: RecruitPage): Promise<boolean> {
   return page.evaluate(() => {
     const visible = (el: Element): boolean => {
       const rect = el.getBoundingClientRect();
@@ -74,7 +74,7 @@ async function confirmDialogIfPresent(page: Page): Promise<boolean> {
 }
 
 /** 读按钮当前状态：点完常见的变化是变灰/变成「已索要」，可作为发送成功的旁证 */
-async function readActionState(page: Page, selector: string): Promise<{ text: string; disabled: boolean }> {
+async function readActionState(page: RecruitPage, selector: string): Promise<{ text: string; disabled: boolean }> {
   return page.evaluate((sel: string) => {
     const el = document.querySelector(sel);
     if (!el) return { text: '', disabled: false };
@@ -86,7 +86,7 @@ async function readActionState(page: Page, selector: string): Promise<{ text: st
   }, selector);
 }
 
-async function requestFromCandidate(page: Page, kind: RequestKind, options: RequestOptions): Promise<any> {
+async function requestFromCandidate(page: RecruitPage, kind: RequestKind, options: RequestOptions): Promise<any> {
   const { resumeId } = options;
   if (!resumeId) {
     throw new Error('简历 ID（resume_id）不能为空');
@@ -100,7 +100,8 @@ async function requestFromCandidate(page: Page, kind: RequestKind, options: Requ
   const selector = ACTION_SELECTOR[kind];
   try {
     await page.waitForSelector(selector, { timeout: 15000 });
-  } catch {
+  } catch (error) {
+    if (error instanceof RiskControlError || error instanceof AuthExpiredError) throw error;
     throw new Error(
       `会话里找不到「${ACTION_LABEL[kind]}」按钮（${selector}）。` +
         '通常是还没跟该候选人建立会话——先跑 liepin greet，或该职位当前不支持这个动作。',
@@ -145,11 +146,11 @@ async function requestFromCandidate(page: Page, kind: RequestKind, options: Requ
   };
 }
 
-export async function requestPhone(page: Page, options: RequestOptions): Promise<any> {
+export async function requestPhone(page: RecruitPage, options: RequestOptions): Promise<any> {
   return requestFromCandidate(page, 'phone', options);
 }
 
-export async function requestResume(page: Page, options: RequestOptions): Promise<any> {
+export async function requestResume(page: RecruitPage, options: RequestOptions): Promise<any> {
   return requestFromCandidate(page, 'resume', options);
 }
 

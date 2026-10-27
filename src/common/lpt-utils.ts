@@ -2,27 +2,15 @@
  * 猎聘招聘者端 (LPT) 工具函数
  */
 
-import { Page } from 'puppeteer-core';
-import { sleep, AuthExpiredError, RELOGIN_HINT, isAuthExpiredResponse } from './utils.js';
+import type { RecruitPage } from '../browser/recruit-page.js';
+import { sleep, AuthExpiredError, RiskControlError, PageUnavailableError, RELOGIN_HINT, isAuthExpiredResponse } from './utils.js';
 import { randomUUID } from 'crypto';
 
 export const LIEPIN_LPT_API = 'https://api-lpt.liepin.com';
 
-/**
- * 触发猎聘风控（验证码 / 频率限制 / 反爬虫挑战）时抛出。
- * 上层遇到此错误应立即停止重试，等待或让用户在浏览器中手动完成验证，
- * 连续换方案试探只会加重风控。
- */
-export class RiskControlError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'RiskControlError';
-  }
-}
-
 const RISK_CONTROL_PATTERN = /验证码|安全验证|请完成验证|操作(过于)?频繁|访问异常|存在风险|风控/;
 
-export { AuthExpiredError, RELOGIN_HINT, isAuthExpiredResponse } from './utils.js';
+export { AuthExpiredError, RiskControlError, PageUnavailableError, RELOGIN_HINT, isAuthExpiredResponse } from './utils.js';
 
 /**
  * 猎聘安全中心的拦截页：账号被判「行为异常」后，页面导航会被 302 到
@@ -41,67 +29,24 @@ export const RISK_PAGE_HINT =
   '请勿重试：运行 `liepin login`，在弹出的浏览器窗口里完成图形验证后再继续。';
 
 const PAGE_BLANKED_HINT =
-  '猎聘安全脚本可能主动清空了页面。' +
-  '请直接重跑命令；若反复复现，`liepin quit` 后重跑，' +
-  '或在 CLI 拉起的浏览器窗口里手动打开 lpt.liepin.com 完成一次安全验证。';
+  '页面失效的触发原因尚未确定，请停止自动化，不要自动重试、刷新或重登。' +
+  '若本次涉及发送消息或打招呼，结果待核验；请人工核对聊天记录，不要自动重发。' +
+  '保留当前浏览器与登录状态，待人工检查后再决定是否恢复。';
 
-/** 能 send CDP 命令的最小会话契约（puppeteer 主会话或 mock） */
-interface CdpMinimalClient {
-  send(method: string): Promise<unknown>;
-}
-
-/**
- * 取 puppeteer 页面主会话。走 CdpFrame 的 client getter，是公开访问器；
- * 拿不到（mock page、未来 puppeteer 结构变化）返回 null，调用方退化为普通行为。
- */
-function mainSessionClient(page: Page): CdpMinimalClient | null {
-  try {
-    const frame = page.mainFrame() as unknown as { client?: CdpMinimalClient };
-    const client = frame?.client;
-    return client && typeof client.send === 'function' ? client : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * 在 puppeteer 主会话上开关 Runtime 域。开关是按会话生效的，
- * 断开连接后自然消失，不会给浏览器留下残留状态。
- */
-export async function setPageRuntime(page: Page, enabled: boolean): Promise<void> {
-  try {
-    await mainSessionClient(page)?.send(enabled ? 'Runtime.enable' : 'Runtime.disable');
-  } catch {
-    /* 主会话不可用时静默跳过，退化为普通导航 */
-  }
-}
-
-/**
- * 规避猎聘「加载期 CDP 检测」的导航。
- *
- * 实测（2026-08-19，Chrome 151）：猎聘安全脚本只在页面加载瞬间检查该页签的
- * CDP 会话是否启用着 Runtime 域，启用则把页面清成 about:blank——这就是
- * issue #17 的根因（自管浏览器实例同样 100% 复现，与挂没挂日常浏览器无关）。
- * 而加载完成后再 Runtime.enable / evaluate 完全不触发。
- * 所以 goto 前先 Runtime.disable，加载完成后立刻 enable 回来。
- */
-export async function safeGoto(page: Page, url: string): Promise<void> {
-  await setPageRuntime(page, false);
-  try {
-    await page.goto(url, { waitUntil: 'networkidle2' });
-  } finally {
-    await setPageRuntime(page, true);
-  }
+/** 导航完成后检查主标签未被清空。 */
+export async function safeGoto(page: RecruitPage, url: string): Promise<void> {
+  await page.goto(url, { waitUntil: 'networkidle2' });
+  assertPageNotBlanked(page, '导航');
 }
 
 /**
  * 页面被猎聘安全脚本清空（跳到 about:blank）后，任何"已拿到的数据"都不可信、
  * 后续请求也必然失败，必须立即以可判别的异常终止（见 issue #17）。
  */
-export function assertPageNotBlanked(page: Page, when: string): void {
+export function assertPageNotBlanked(page: RecruitPage, when: string): void {
   const url = page.url();
   if (url === 'about:blank' || url.startsWith('chrome-error://')) {
-    throw new RiskControlError(`${when}时页面已被清空（当前 ${url}）。${PAGE_BLANKED_HINT}`);
+    throw new PageUnavailableError(`${when}时页面已被清空（当前 ${url}）。${PAGE_BLANKED_HINT}`);
   }
 }
 
@@ -110,7 +55,7 @@ export function assertPageNotBlanked(page: Page, when: string): void {
  * 都是跨域 fetch，必然失败，继续等只会白等（issue #21 问题四）。
  * `login` 例外——那里人就该停在验证页上过滑块，所以它只用 assertPageNotBlanked。
  */
-export function assertLptPageAlive(page: Page, when: string): void {
+export function assertLptPageAlive(page: RecruitPage, when: string): void {
   assertPageNotBlanked(page, when);
   if (isRiskPageUrl(page.url())) {
     throw new RiskControlError(`${when}时页面被跳转到猎聘安全验证页（当前 ${page.url()}）。${RISK_PAGE_HINT}`);
@@ -121,7 +66,7 @@ export function assertLptPageAlive(page: Page, when: string): void {
 const CONTEXT_DESTROYED_PATTERN = /Execution context was destroyed|Cannot find context|Target closed|Session closed/i;
 
 /** LPT API 请求 */
-export async function lptFetch(page: Page, url: string, opts: { body?: string; clientId?: string } = {}): Promise<any> {
+export async function lptFetch(page: RecruitPage, url: string, opts: { body?: string; clientId?: string } = {}): Promise<any> {
   const { body = null, clientId = '40156' } = opts;
   const traceId = randomUUID();
 
@@ -161,9 +106,10 @@ export async function lptFetch(page: Page, url: string, opts: { body?: string; c
     }
   }, url, body, clientId, traceId);
   } catch (e: any) {
+    if (e instanceof PageUnavailableError) throw e;
     if (CONTEXT_DESTROYED_PATTERN.test(String(e?.message || e))) {
-      assertLptPageAlive(page, '请求执行');
-      throw new RiskControlError(`请求执行中页面发生了导航（${String(e?.message || e)}）。${PAGE_BLANKED_HINT}`);
+      assertPageNotBlanked(page, '请求执行');
+      throw new PageUnavailableError(`请求执行中页面发生了导航（${String(e?.message || e)}）。${PAGE_BLANKED_HINT}`);
     }
     throw e;
   }
@@ -218,7 +164,7 @@ export async function lptFetch(page: Page, url: string, opts: { body?: string; c
 }
 
 /** 导航到 LPT 页面 */
-export async function navigateToLpt(page: Page, path: string = '/recommend', waitSeconds: number = 3): Promise<void> {
+export async function navigateToLpt(page: RecruitPage, path: string = '/recommend', waitSeconds: number = 3): Promise<void> {
   const url = `https://lpt.liepin.com${path}`;
   await safeGoto(page, url);
   await sleep(waitSeconds * 1000);
@@ -226,7 +172,7 @@ export async function navigateToLpt(page: Page, path: string = '/recommend', wai
 }
 
 /** 读取 imId */
-export async function readLptImId(page: Page): Promise<string> {
+export async function readLptImId(page: RecruitPage): Promise<string> {
   const result = await page.evaluate(() => {
     // Try cookie first
     const m = document.cookie.match(/imId_2=([^;]+)/i);
@@ -262,7 +208,7 @@ export interface LptResumeInfo {
 }
 
 /** 用 resume_id 换候选人的 usercId / imId / 姓名（resume-view 接口） */
-export async function getResumeInfo(page: Page, resumeId: string): Promise<LptResumeInfo> {
+export async function getResumeInfo(page: RecruitPage, resumeId: string): Promise<LptResumeInfo> {
   const form = new URLSearchParams();
   form.set('pageParamVo', JSON.stringify({
     resIdEncode: resumeId,
@@ -292,7 +238,7 @@ export async function getResumeInfo(page: Page, resumeId: string): Promise<LptRe
 }
 
 /** 打开简历详情页并展开右侧 IM 聊天面板（输入框出现即就绪） */
-export async function openResumeImPanel(page: Page, resumeId: string): Promise<void> {
+export async function openResumeImPanel(page: RecruitPage, resumeId: string): Promise<void> {
   await safeGoto(page, `https://lpt.liepin.com/resume/detail?resIdEncode=${encodeURIComponent(resumeId)}&sfrom=R_SEARCH_CONDITION`);
   assertLptPageAlive(page, '打开简历详情');
   await page.waitForSelector('.xpath-open-im-btn', { timeout: 20000 });

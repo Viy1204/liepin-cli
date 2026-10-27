@@ -1,5 +1,8 @@
-import { test } from 'node:test';
+import { after, mock, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
+import type { CDPSession } from 'puppeteer-core';
+import { RecruitPageSession } from '../browser/recruit-page.js';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -8,16 +11,25 @@ import { join } from 'node:path';
  * 这两个环境变量必须在 import 被测模块**之前**设好，所以下面用动态 import：
  *
  * - `LIEPIN_CONFIG_DIR`：登录频率记录写到临时目录，别碰用户真实的 ~/.liepin-cli
- * - `LIEPIN_BROWSER_REMOTE_DEBUGGING_PORT`：指向一个没人监听的端口，让 probeRemoteHeadless()
- *   返回 null。**不这么做，跑测试会把用户正在用的那只浏览器关掉**（登录态是会话
- *   cookie，关掉就等于退出登录）。
+ * - `LIEPIN_BROWSER_REMOTE_DEBUGGING_PORT`：保留独立测试端口；fetch 同时被 mock，
+ *   测试不会访问任何调试端口或真实浏览器。
  */
 const CONFIG_DIR = mkdtempSync(join(tmpdir(), 'liepin-cli-login-'));
 process.env.LIEPIN_CONFIG_DIR = CONFIG_DIR;
 process.env.LIEPIN_BROWSER_REMOTE_DEBUGGING_PORT = '53599';
 
-const { login, readRecentLogins, recordLogin } = await import('./login.js');
+const browserRequests: string[] = [];
+let onBrowserRequest: (() => void) | undefined;
+const browserFetch = mock.method(globalThis, 'fetch', async (input: string | URL | Request) => {
+  browserRequests.push(String(input));
+  onBrowserRequest?.();
+  throw new Error('测试禁止访问浏览器');
+});
 
+const { login, readRecentLogins, recordLogin } = await import('./login.js');
+const { PageUnavailableError, RiskControlError } = await import('../common/utils.js');
+
+after(() => browserFetch.mock.restore());
 process.on('exit', () => rmSync(CONFIG_DIR, { recursive: true, force: true }));
 
 /**
@@ -27,19 +39,28 @@ process.on('exit', () => rmSync(CONFIG_DIR, { recursive: true, force: true }));
  *   - 0 个实参  -> readLptImId 之类的 DOM 读取
  *   - 4 个实参  -> lptFetch（传 url / body / clientId / traceId）
  */
-function fakePage(opts: { url: string; apiText: string; apiTextAfter?: string; switchAfter?: number }) {
-  const { url, apiText } = opts;
+function fakePage(opts: {
+  url: string;
+  apiText: string;
+  apiTextAfter?: string;
+  switchAfter?: number;
+  urlAfterProbe?: string;
+  probeError?: Error;
+}) {
+  let url = opts.url;
   let probeCount = 0;
 
   const page: any = {
+    assertAvailable: () => {},
     goto: async () => {},
     url: () => url,
-    mainFrame: () => ({ client: { send: async () => {} } }),
     evaluate: async (_fn: any, ...args: any[]) => {
       if (args.length === 4) {
         probeCount += 1;
+        if (opts.urlAfterProbe) url = opts.urlAfterProbe;
+        if (opts.probeError) throw opts.probeError;
         const text =
-          opts.apiTextAfter && probeCount > (opts.switchAfter ?? 1) ? opts.apiTextAfter : apiText;
+          opts.apiTextAfter && probeCount > (opts.switchAfter ?? 1) ? opts.apiTextAfter : opts.apiText;
         return { ok: true, status: 200, text };
       }
       return '';
@@ -155,6 +176,76 @@ test('login: 等待期间页面被清空为 about:blank 时立即抛 RiskControl
   );
 });
 
+for (const url of ['about:blank', 'chrome-error://chromewebdata/']) {
+  test(`login: 鉴权后主标签变成 ${url} 时立即停止，不探测浏览器或记录重登`, async () => {
+    freshHistory();
+    const browserRequestsBefore = browserRequests.length;
+    const { page, probes } = fakePage({
+      url: 'https://lpt.liepin.com/recommend',
+      apiText: AUTHED,
+      urlAfterProbe: url,
+    });
+
+    await assert.rejects(() => login(page, { timeout: 1 }), PageUnavailableError);
+
+    assert.equal(probes(), 1);
+    assert.equal(browserRequests.length, browserRequestsBefore);
+    assert.deepEqual(readRecentLogins(), []);
+  });
+}
+
+test('login: 页面 URL 正常时仍原样传播 sticky 状态故障，不进入人工验证', async () => {
+  freshHistory();
+  const browserRequestsBefore = browserRequests.length;
+  const fault = new PageUnavailableError('Execution context was destroyed：页面发生过导航');
+  const { page, probes } = fakePage({
+    url: 'https://lpt.liepin.com/recommend',
+    apiText: AUTHED,
+    probeError: fault,
+  });
+
+  await assert.rejects(() => login(page, { timeout: 1 }), error => error === fault);
+
+  assert.ok(fault instanceof RiskControlError);
+  assert.equal(fault.name, 'RiskControlError');
+  assert.equal(probes(), 1);
+  assert.equal(browserRequests.length, browserRequestsBefore);
+  assert.deepEqual(readRecentLogins(), []);
+});
+
+test('login: 鉴权连接关闭时立即停止，不当成未登录去重启', async () => {
+  freshHistory();
+  const browserRequestsBefore = browserRequests.length;
+  const { page, probes } = fakePage({
+    url: 'https://lpt.liepin.com/recommend',
+    apiText: AUTHED,
+    probeError: new Error('Session closed'),
+  });
+
+  await assert.rejects(() => login(page, { timeout: 1 }), PageUnavailableError);
+
+  assert.equal(probes(), 1);
+  assert.equal(browserRequests.length, browserRequestsBefore);
+  assert.deepEqual(readRecentLogins(), []);
+});
+
+test('login: 未分类鉴权错误原样传播，不当成未登录去重启', async () => {
+  freshHistory();
+  const browserRequestsBefore = browserRequests.length;
+  const failure = new Error('Connection lost');
+  const { page, probes } = fakePage({
+    url: 'https://lpt.liepin.com/recommend',
+    apiText: AUTHED,
+    probeError: failure,
+  });
+
+  await assert.rejects(() => login(page, { timeout: 1 }), error => error === failure);
+
+  assert.equal(probes(), 1);
+  assert.equal(browserRequests.length, browserRequestsBefore);
+  assert.deepEqual(readRecentLogins(), []);
+});
+
 test('login: 24 小时内登录超过 3 次直接拦下，不再重启浏览器（issue #21 问题二）', async () => {
   freshHistory();
   const now = Date.now();
@@ -179,6 +270,48 @@ test('login: --force 可以突破频率闸（用户明确要求时不挡路）',
   assert.notEqual(result.rate_limited, true);
   assert.equal(result.message, '登录超时');
 });
+
+for (const faultKind of ['blank-recovered', 'disconnected'] as const) {
+  test(`login: 等待登录期间 ${faultKind} 仍停止，不返回超时或提示重试`, async t => {
+    freshHistory();
+    const browserRequestsBefore = browserRequests.length;
+    const connection = new AbortController();
+    const methods: string[] = [];
+    const session = new EventEmitter() as EventEmitter & { detached: boolean; connection: () => undefined; send: (method: string) => Promise<any>; detach: () => Promise<void> };
+    session.detached = false;
+    session.connection = () => undefined;
+    session.detach = async () => { session.detached = true; };
+    session.send = async method => {
+      methods.push(method);
+      if (method === 'Page.getFrameTree') return { frameTree: { frame: { id: 'main', loaderId: 'initial', url: 'https://lpt.liepin.com/login' } } };
+      if (method === 'Page.navigate') {
+        session.emit('Page.frameNavigated', { frame: { id: 'main', loaderId: 'login', url: 'https://lpt.liepin.com/login' } });
+        session.emit('Page.lifecycleEvent', { frameId: 'main', loaderId: 'login', name: 'networkAlmostIdle' });
+        return { frameId: 'main', loaderId: 'login' };
+      }
+      return {};
+    };
+    const page = await RecruitPageSession.create(session as unknown as CDPSession, { signal: connection.signal });
+    t.after(() => page.dispose());
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    onBrowserRequest = () => {
+      timer = setTimeout(() => {
+        if (faultKind === 'disconnected') connection.abort();
+        else {
+          session.emit('Page.frameNavigated', { frame: { id: 'main', loaderId: 'blank', url: 'about:blank' } });
+          session.emit('Page.frameNavigated', { frame: { id: 'main', loaderId: 'recovered', url: 'https://lpt.liepin.com/login' } });
+        }
+      }, 10);
+    };
+    t.after(() => { clearTimeout(timer); onBrowserRequest = undefined; });
+
+    await assert.rejects(() => login(page, { timeout: 0.1 }), PageUnavailableError);
+
+    assert.equal(page.url(), 'https://lpt.liepin.com/login');
+    assert.equal(browserRequests.length, browserRequestsBefore + 1);
+    assert.ok(!methods.includes('Runtime.evaluate'));
+  });
+}
 
 test('登录历史只保留 24 小时内的记录，旧的自动过期', () => {
   freshHistory();

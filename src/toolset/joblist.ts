@@ -7,7 +7,7 @@
  *   旧 URL 早已 404。LPT 上对应的入口是 /job/manager，BFF 端点是 jobmanage.list。
  */
 
-import { Page } from 'puppeteer-core';
+import type { RecruitPage } from '../browser/recruit-page.js';
 import { LIEPIN_LPT_API, lptFetch, navigateToLpt } from '../common/lpt-utils.js';
 
 export interface JoblistOptions {
@@ -25,7 +25,7 @@ const JOB_STATUS_MAP: Record<string, string> = {
   '20': '审核未通过',
 };
 
-export async function joblist(page: Page, options: JoblistOptions): Promise<any[]> {
+export async function joblist(page: RecruitPage, options: JoblistOptions): Promise<any[]> {
   const { status = '', page: pageNum = 1, limit = 20 } = options;
 
   // 导航到 LPT 职位管理页面

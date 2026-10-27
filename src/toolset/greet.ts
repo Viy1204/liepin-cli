@@ -10,7 +10,7 @@
  * 打开 IM 面板补发自定义文本。
  */
 
-import { Page } from 'puppeteer-core';
+import type { RecruitPage } from '../browser/recruit-page.js';
 import {
   LIEPIN_LPT_API,
   lptFetch,
@@ -38,7 +38,7 @@ function looksLikeUserId(value: string): boolean {
   return /^[a-f0-9]{32}$/i.test(value);
 }
 
-async function getChatJobs(page: Page): Promise<ChatJob[]> {
+async function getChatJobs(page: RecruitPage): Promise<ChatJob[]> {
   const data = await lptFetch(page, `${LIEPIN_LPT_API}/api/com.liepin.im.b.chat.get-job-chat-list`, {
     body: 'curPage=0&pageSize=10&_keyword=',
     clientId: '40342',
@@ -51,7 +51,7 @@ async function getChatJobs(page: Page): Promise<ChatJob[]> {
   return data.data?.list || [];
 }
 
-async function hasChat(page: Page, usercId: string): Promise<boolean> {
+async function hasChat(page: RecruitPage, usercId: string): Promise<boolean> {
   const data = await lptFetch(page, `${LIEPIN_LPT_API}/api/com.liepin.im.b.chat.has-chat`, {
     body: `encodeOppositeUserId=${encodeURIComponent(usercId)}`,
     clientId: '40342',
@@ -64,7 +64,7 @@ async function hasChat(page: Page, usercId: string): Promise<boolean> {
   return data.data === true;
 }
 
-async function pickChatJob(page: Page, ejobId: string): Promise<ChatJob> {
+async function pickChatJob(page: RecruitPage, ejobId: string): Promise<ChatJob> {
   const jobs = await getChatJobs(page);
   const selected = ejobId
     ? jobs.find(job => String(job.ejobId) === String(ejobId))
@@ -77,7 +77,7 @@ async function pickChatJob(page: Page, ejobId: string): Promise<ChatJob> {
   return selected;
 }
 
-async function verifyMessageSent(page: Page, oppositeImId: string, message: string): Promise<boolean> {
+async function verifyMessageSent(page: RecruitPage, oppositeImId: string, message: string): Promise<boolean> {
   const imId = await readLptImId(page);
   if (!imId || !oppositeImId) return false;
 
@@ -100,7 +100,7 @@ async function verifyMessageSent(page: Page, oppositeImId: string, message: stri
   });
 }
 
-async function sendMessageInIm(page: Page, resumeId: string, oppositeImId: string, message: string): Promise<void> {
+async function sendMessageInIm(page: RecruitPage, resumeId: string, oppositeImId: string, message: string): Promise<void> {
   await openResumeImPanel(page, resumeId);
 
   // React 受控组件：keyboard.type 中文输入极慢且易超时，execCommand 才能触发 React 状态更新
@@ -129,7 +129,7 @@ async function sendMessageInIm(page: Page, resumeId: string, oppositeImId: strin
   }
 }
 
-export async function greet(page: Page, options: GreetOptions): Promise<any> {
+export async function greet(page: RecruitPage, options: GreetOptions): Promise<any> {
   const { usercId: targetId, message = '' } = options;
   const ejobId = options.ejobId || options.jobId || '';
 
