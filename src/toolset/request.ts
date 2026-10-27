@@ -17,7 +17,7 @@ import {
   openResumeImPanel,
   readLptImId,
 } from '../common/lpt-utils.js';
-import { sleepRandom } from '../common/utils.js';
+import { AuthExpiredError, RiskControlError, sleepRandom } from '../common/utils.js';
 
 export type RequestKind = 'phone' | 'resume';
 
@@ -100,7 +100,8 @@ async function requestFromCandidate(page: RecruitPage, kind: RequestKind, option
   const selector = ACTION_SELECTOR[kind];
   try {
     await page.waitForSelector(selector, { timeout: 15000 });
-  } catch {
+  } catch (error) {
+    if (error instanceof RiskControlError || error instanceof AuthExpiredError) throw error;
     throw new Error(
       `会话里找不到「${ACTION_LABEL[kind]}」按钮（${selector}）。` +
         '通常是还没跟该候选人建立会话——先跑 liepin greet，或该职位当前不支持这个动作。',

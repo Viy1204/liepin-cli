@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { requestPhone, requestResume, requestPhoneCommand, requestResumeCommand } from './request.js';
 import { parsePayload } from './chatmsg.js';
+import { AuthExpiredError, PageUnavailableError, RiskControlError } from '../common/utils.js';
 
 const RESUME_VIEW = 'resume-view';
 const CHAT_LIST = 'chat-list';
@@ -12,6 +13,7 @@ const CHAT_LIST = 'chat-list';
  */
 function fakePage(opts: {
   actionMissing?: boolean;
+  actionWaitError?: Error;
   disabledBefore?: boolean;
   disabledAfter?: boolean;
   newMessage?: boolean;
@@ -30,7 +32,10 @@ function fakePage(opts: {
     goto: async () => {},
     mainFrame: () => ({ client: { send: async () => {} } }),
     waitForSelector: async (sel: string) => {
-      if (opts.actionMissing && sel.includes('action-')) throw new Error('timeout');
+      if (sel.includes('action-')) {
+        if (opts.actionWaitError) throw opts.actionWaitError;
+        if (opts.actionMissing) throw new Error('timeout');
+      }
       calls.push(`wait:${sel}`);
     },
     click: async (sel: string) => {
@@ -128,6 +133,27 @@ test('会话不存在（按钮没渲染）时报错指向 greet，不静默成�
 
   await assert.rejects(() => requestPhone(page, { resumeId: 'r-1' }), /greet/);
 });
+
+for (const [kind, request] of [['phone', requestPhone], ['resume', requestResume]] as const) {
+  for (const [reason, ErrorType] of [
+    ['页面失效', PageUnavailableError],
+    ['触发风控', RiskControlError],
+    ['登录态失效', AuthExpiredError],
+  ] as const) {
+    test(`request-${kind}: 等待动作按钮时${reason}原样传播，不点击或引导 greet`, async () => {
+      const actionError = new ErrorType(`等待动作按钮时${reason}`);
+      const { page, calls } = fakePage({ actionWaitError: actionError });
+
+      await assert.rejects(() => request(page, { resumeId: 'r-1' }), (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.doesNotMatch(error.message, /greet/);
+        assert.strictEqual(error, actionError);
+        return true;
+      });
+      assert.ok(!calls.some(c => c.startsWith('click:.im-ui-action-button')));
+    });
+  }
+}
 
 test('空 resume_id 直接报错', async () => {
   const { page } = fakePage();

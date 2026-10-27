@@ -1,7 +1,8 @@
-import type { CDPSession, Protocol } from 'puppeteer-core';
+import { CDPSessionEvent, type CDPSession, type Connection, type Protocol } from 'puppeteer-core';
 import { PageUnavailableError } from '../common/utils.js';
 
 export interface RecruitPage {
+  assertAvailable(): void;
   url(): string;
   goto(url: string, options: { waitUntil: 'networkidle2'; timeout?: number }): Promise<void>;
   evaluate<Args extends unknown[], Result>(fn: (...args: Args) => Result, ...args: Args): Promise<Awaited<Result>>;
@@ -20,6 +21,7 @@ type PageOptions = { allowInitialBlank?: boolean; timeoutMs?: number; signal?: A
 
 export class RecruitPageSession implements RecruitPage {
   readonly #session: CDPSession;
+  readonly #connection?: Connection;
   readonly #timeout: number;
   readonly #signal?: AbortSignal;
   readonly #frames = new Map<string, FrameState>();
@@ -35,6 +37,8 @@ export class RecruitPageSession implements RecruitPage {
 
   private constructor(session: CDPSession, options: PageOptions) {
     this.#session = session;
+    this.#connection = session.connection();
+    this.#connection?.on(CDPSessionEvent.SessionDetached, this.#onSessionDetached);
     this.#timeout = options.timeoutMs ?? 30000;
     this.#signal = options.signal;
     this.#allowInitialBlank = options.allowInitialBlank === true;
@@ -66,6 +70,7 @@ export class RecruitPageSession implements RecruitPage {
     }
   }
 
+  assertAvailable(): void { this.#assert(); }
   url(): string { return this.#url; }
   isClosed(): boolean { return this.#closed || this.#session.detached; }
 
@@ -150,6 +155,10 @@ export class RecruitPageSession implements RecruitPage {
     this.#notify();
   };
 
+  #onSessionDetached = (session: CDPSession): void => {
+    if (session === this.#session) this.#onDisconnected();
+  };
+
   #onDisconnected = (): void => {
     this.#closed = true;
     this.#notify();
@@ -183,8 +192,8 @@ export class RecruitPageSession implements RecruitPage {
       const timer = setTimeout(() => finish(new Error('页面协议请求超时')), timeout);
       this.#checks.add(check);
       try {
-        operation().then(result => { check(); finish(undefined, result); }, error => finish(error));
-      } catch (error) { finish(error); }
+        operation().then(result => { check(); finish(undefined, result); }, error => { check(); finish(error); });
+      } catch (error) { check(); finish(error); }
     });
   }
 
@@ -332,6 +341,7 @@ export class RecruitPageSession implements RecruitPage {
   }
 
   #removeListeners(): void {
+    this.#connection?.off(CDPSessionEvent.SessionDetached, this.#onSessionDetached);
     this.#session.off('Page.frameNavigated', this.#onFrame);
     this.#session.off('Page.navigatedWithinDocument', this.#onSameDocument);
     this.#session.off('Page.frameAttached', this.#onAttached);

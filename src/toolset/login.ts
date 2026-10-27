@@ -92,6 +92,7 @@ function hoursUntilQuotaFrees(logins: number[], now: number): number {
  * 直接打下游命令真正依赖的鉴权接口，成功即成功，不存在误判。
  */
 async function probeSession(page: RecruitPage): Promise<SessionState> {
+  page.assertAvailable();
   // 已经被 302 到安全中心：接口全是跨域必失败，不必再打一次，省一次请求
   if (isRiskPageUrl(page.url())) return 'risk';
 
@@ -132,6 +133,7 @@ export async function login(page: RecruitPage, options: LoginOptions): Promise<a
   console.log('正在打开猎聘招聘者端...');
   await safeGoto(page, 'https://lpt.liepin.com/');
   await sleep(2000);
+  page.assertAvailable();
 
   // 先看现有登录态还在不在：在就什么都不用动。会话 cookie 是 is_persistent=0，
   // 关掉浏览器就等于退出登录，所以"能不重启就不重启"直接决定了要不要再扫一次码。
@@ -173,7 +175,9 @@ export async function login(page: RecruitPage, options: LoginOptions): Promise<a
   let activePage = page;
   let restarted: CdpBrowser | null = null;
   try {
-    if ((await probeRemoteHeadless()) === true) {
+    const headless = await probeRemoteHeadless();
+    activePage.assertAvailable();
+    if (headless === true) {
       console.log('当前浏览器是无头的，正在切换成有头窗口以便扫码...');
       await closeRemoteBrowser();
       process.env.LIEPIN_HEADLESS = 'false';
@@ -183,6 +187,7 @@ export async function login(page: RecruitPage, options: LoginOptions): Promise<a
       await sleep(2000);
     }
 
+    activePage.assertAvailable();
     recordLogin(now);
     return await waitForLogin(activePage, timeout);
   } finally {
@@ -209,6 +214,7 @@ async function waitForLogin(page: RecruitPage, timeout: number): Promise<any> {
   let lastState: SessionState = 'anonymous';
 
   while (Date.now() - startTime < timeoutMs) {
+    page.assertAvailable();
     const elapsed = Math.floor((Date.now() - startTime) / 1000);
     process.stdout.write(`\r  等待登录中... ${elapsed}s / ${timeout}s`);
 
@@ -252,6 +258,7 @@ async function waitForLogin(page: RecruitPage, timeout: number): Promise<any> {
     await sleep(1000);
   }
 
+  page.assertAvailable();
   console.log('');
   if (lastState === 'risk' || riskNoticeShown) {
     console.log('❌ 登录未完成：卡在猎聘安全验证上');

@@ -3,11 +3,13 @@ import { EventEmitter } from 'node:events';
 import { setImmediate } from 'node:timers/promises';
 import vm from 'node:vm';
 import test from 'node:test';
-import type { CDPSession } from 'puppeteer-core';
+import { CDPSessionEvent, type CDPSession } from 'puppeteer-core';
 import { RecruitPageSession } from './recruit-page.js';
 
 class FakeSession extends EventEmitter {
   detached = false;
+  connectionEvents = new EventEmitter();
+  connection() { return this.connectionEvents; }
   disconnect = new AbortController();
   calls: Array<{ method: string; params: any }> = [];
   frame = { id: 'main', loaderId: 'initial', url: 'https://lpt.liepin.com/recommend' };
@@ -237,6 +239,38 @@ test('断连立即结束等待、导航和取值，dispose 只 detach', async ()
     assert.equal(session.eventNames().length, 0);
     assert.ok(session.calls.every(call => !['Browser.close', 'Target.closeTarget'].includes(call.method)));
   }
+});
+
+test('页面会话单独断开时挂起取值按退出码 3 停止，不等待浏览器断连', async () => {
+  const session = new FakeSession();
+  const page = await session.page();
+  session.evaluate = () => new Promise(() => {});
+  const pending = assert.rejects(page.evaluate(() => 1), { name: 'RiskControlError' });
+  session.detached = true;
+  session.connectionEvents.emit(CDPSessionEvent.SessionDetached, session);
+
+  await pending;
+
+  assert.equal(session.disconnect.signal.aborted, false);
+  assert.equal(session.calls.filter(call => call.method === 'Runtime.evaluate').length, 1);
+  assert.equal(session.eventNames().length, 0);
+  assert.equal(session.connectionEvents.eventNames().length, 0);
+  await page.dispose();
+});
+
+test('页面会话拒绝请求时仍检查断连状态，不用普通协议错误掩盖页面失效', async () => {
+  const session = new FakeSession();
+  const page = await session.page();
+  session.evaluate = async () => {
+    session.detached = true;
+    throw new Error('Protocol error (Runtime.evaluate): Target closed');
+  };
+
+  await assert.rejects(page.evaluate(() => 1), { name: 'RiskControlError' });
+
+  assert.equal(session.disconnect.signal.aborted, false);
+  assert.equal(session.calls.filter(call => call.method === 'Runtime.evaluate').length, 1);
+  await page.dispose();
 });
 
 test('waitForSelector 轮询 DOM，超时或导航立即停止', async () => {

@@ -1,5 +1,8 @@
 import { after, mock, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
+import type { CDPSession } from 'puppeteer-core';
+import { RecruitPageSession } from '../browser/recruit-page.js';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -16,8 +19,10 @@ process.env.LIEPIN_CONFIG_DIR = CONFIG_DIR;
 process.env.LIEPIN_BROWSER_REMOTE_DEBUGGING_PORT = '53599';
 
 const browserRequests: string[] = [];
+let onBrowserRequest: (() => void) | undefined;
 const browserFetch = mock.method(globalThis, 'fetch', async (input: string | URL | Request) => {
   browserRequests.push(String(input));
+  onBrowserRequest?.();
   throw new Error('测试禁止访问浏览器');
 });
 
@@ -46,6 +51,7 @@ function fakePage(opts: {
   let probeCount = 0;
 
   const page: any = {
+    assertAvailable: () => {},
     goto: async () => {},
     url: () => url,
     evaluate: async (_fn: any, ...args: any[]) => {
@@ -264,6 +270,48 @@ test('login: --force 可以突破频率闸（用户明确要求时不挡路）',
   assert.notEqual(result.rate_limited, true);
   assert.equal(result.message, '登录超时');
 });
+
+for (const faultKind of ['blank-recovered', 'disconnected'] as const) {
+  test(`login: 等待登录期间 ${faultKind} 仍停止，不返回超时或提示重试`, async t => {
+    freshHistory();
+    const browserRequestsBefore = browserRequests.length;
+    const connection = new AbortController();
+    const methods: string[] = [];
+    const session = new EventEmitter() as EventEmitter & { detached: boolean; connection: () => undefined; send: (method: string) => Promise<any>; detach: () => Promise<void> };
+    session.detached = false;
+    session.connection = () => undefined;
+    session.detach = async () => { session.detached = true; };
+    session.send = async method => {
+      methods.push(method);
+      if (method === 'Page.getFrameTree') return { frameTree: { frame: { id: 'main', loaderId: 'initial', url: 'https://lpt.liepin.com/login' } } };
+      if (method === 'Page.navigate') {
+        session.emit('Page.frameNavigated', { frame: { id: 'main', loaderId: 'login', url: 'https://lpt.liepin.com/login' } });
+        session.emit('Page.lifecycleEvent', { frameId: 'main', loaderId: 'login', name: 'networkAlmostIdle' });
+        return { frameId: 'main', loaderId: 'login' };
+      }
+      return {};
+    };
+    const page = await RecruitPageSession.create(session as unknown as CDPSession, { signal: connection.signal });
+    t.after(() => page.dispose());
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    onBrowserRequest = () => {
+      timer = setTimeout(() => {
+        if (faultKind === 'disconnected') connection.abort();
+        else {
+          session.emit('Page.frameNavigated', { frame: { id: 'main', loaderId: 'blank', url: 'about:blank' } });
+          session.emit('Page.frameNavigated', { frame: { id: 'main', loaderId: 'recovered', url: 'https://lpt.liepin.com/login' } });
+        }
+      }, 10);
+    };
+    t.after(() => { clearTimeout(timer); onBrowserRequest = undefined; });
+
+    await assert.rejects(() => login(page, { timeout: 0.1 }), PageUnavailableError);
+
+    assert.equal(page.url(), 'https://lpt.liepin.com/login');
+    assert.equal(browserRequests.length, browserRequestsBefore + 1);
+    assert.ok(!methods.includes('Runtime.evaluate'));
+  });
+}
 
 test('登录历史只保留 24 小时内的记录，旧的自动过期', () => {
   freshHistory();
