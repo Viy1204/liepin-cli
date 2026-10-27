@@ -93,7 +93,7 @@ RECRUIT_BROWSER_HIDDEN=true liepin <cmd>   # 或 LIEPIN_HEADLESS=true（优先�
 
 ### 风控形态有两种，都要立即停
 
-1. **页面被清空成 about:blank** —— issue #17 的历史加载期问题有 `safeGoto` 处理；#23 本机已捕获控制台耗时探针命中后主动清页，实验路径与限制见 `experiments/issue23-ui/EVIDENCE.md`，不保证自定义点击流程稳定。立即停止，保留浏览器，涉及发送则待人工核验，不自动重试或重发；
+1. **页面被清空成 about:blank** —— #23 本机曾捕获控制台耗时探针命中后主动清页，历史证据见 `experiments/issue23-ui/EVIDENCE.md`。生产页面操作由 `RecruitPageSession` 按需执行 CDP 命令，不创建 Puppeteer Page，不启用 Runtime/console、Log、Performance 或 Debugger 事件订阅；不要恢复旧的 Runtime 开关逻辑。主页面一旦清空，仍立即停止并保留浏览器，涉及发送则待人工核验，不自动重试或重发。`PageUnavailableError` 属于退出码 3，登录探测也必须原样传播，不能转入重登流程；
 2. **被 302 到 `safe.liepin.com/.../captchaPage_PC`** —— 账号被判「行为异常」，
    此时业务接口只回一个**没有 msg 的 `{"flag":0}`**（不是权益不足！），
    `assertLptPageAlive` / `lptFetch` 都会抛 `RiskControlError`（退出码 3）。
@@ -121,10 +121,11 @@ await page.goto(url); // 没有等待
 // 没有延迟
 ```
 
-### Puppeteer evaluate 约束
+### 页面 evaluate 约束
 
-本项目用 `tsc`（非 esbuild）编译，函数回调形式的 `page.evaluate` 不会触发
-`__name is not defined`，因此直接传函数即可，参数通过 `evaluate` 的后续实参注入。
+本项目用 `tsc`（非 esbuild）编译，`RecruitPage.evaluate` 通过当前主文档的默认 world
+执行可信函数，不依赖 Runtime 事件或缓存的执行上下文。参数通过后续实参注入，支持
+现有命令所需的 JSON 值与顶层 `undefined`；遇到导航或断连立即失败，不自动重放回调。
 
 ```typescript
 // 当前用法：函数回调 + 实参注入（见 common/utils.ts、common/lpt-utils.ts）

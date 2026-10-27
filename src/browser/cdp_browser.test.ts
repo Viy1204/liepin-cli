@@ -4,6 +4,7 @@ import {
   probeRemoteHeadless,
   REMOTE_DEBUGGING_PORT,
   resolveHeadlessFromEnv,
+  selectRecruitTarget,
   toWindowsCommandLine,
 } from './cdp_browser.js';
 
@@ -89,6 +90,29 @@ test('Windows 命令行拼接：参数里的引号与反斜杠按 CreateProcess 
   assert.equal(toWindowsCommandLine('a.exe', ['say "hi"']), 'a.exe "say \\"hi\\""');
   // 结尾反斜杠要翻倍，否则会把收尾的引号转义掉
   assert.equal(toWindowsCommandLine('a.exe', ['C:\\dir with space\\']), 'a.exe "C:\\dir with space\\\\"');
+});
+
+test('选择招聘页时跳过无关标签，不会复用第一个页面', () => {
+  const unrelated = { type: () => 'page', url: () => 'https://example.com/' };
+  const recruiter = { type: () => 'page', url: () => 'https://lpt.liepin.com/recommend' };
+  assert.equal(selectRecruitTarget([unrelated, recruiter]), recruiter);
+});
+
+test('多个招聘页不猜测目标；已有空白页由页面会话保留停止语义', () => {
+  const target = (url: string) => ({ type: () => 'page', url: () => url });
+  assert.throws(() => selectRecruitTarget([
+    target('https://lpt.liepin.com/search'), target('https://lpt.liepin.com/recommend'),
+  ]), /多个招聘页面/);
+  const blank = target('about:blank');
+  assert.equal(selectRecruitTarget([blank]), blank);
+  assert.throws(() => selectRecruitTarget([target('https://example.com/')]), /没有可用的招聘页面/);
+  assert.equal(selectRecruitTarget([{ type: () => 'service_worker', url: () => 'https://lpt.liepin.com/' }]), undefined);
+});
+
+test('只有本次新启动的浏览器可从默认新标签页创建工作页', () => {
+  const newTab = { type: () => 'page', url: () => 'chrome://newtab/' };
+  assert.equal(selectRecruitTarget([newTab], true), undefined);
+  assert.throws(() => selectRecruitTarget([newTab]), /没有可用的招聘页面/);
 });
 
 test('probeRemoteHeadless 按 /json/version 的 UA 判模式', async (t) => {

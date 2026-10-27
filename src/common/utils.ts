@@ -2,7 +2,7 @@
  * 猎聘 CLI 通用工具函数
  */
 
-import { Page } from 'puppeteer-core';
+import type { RecruitPage } from '../browser/recruit-page.js';
 
 /**
  * 登录态失效（cookie 过期 / 被踢下线）时抛出。
@@ -14,6 +14,21 @@ export class AuthExpiredError extends Error {
     this.name = 'AuthExpiredError';
   }
 }
+
+/**
+ * 触发猎聘风控（验证码 / 频率限制 / 反爬虫挑战）时抛出。
+ * 上层遇到此错误应立即停止重试，等待或让用户在浏览器中手动完成验证，
+ * 连续换方案试探只会加重风控。
+ */
+export class RiskControlError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'RiskControlError';
+  }
+}
+
+/** 页面或会话失效时必须停止；继承错误名以保留退出码 3。 */
+export class PageUnavailableError extends RiskControlError {}
 
 /** 猎聘在登录态失效时返回的 flag 码（实测：-1401 未登录 / -1701 会话失效）。 */
 const AUTH_EXPIRED_FLAGS = new Set([-1401, -1701]);
@@ -208,14 +223,14 @@ export function sleepRandom(min: number = 500, max: number = 1500): Promise<void
 }
 
 /** 要求页面已初始化 */
-export function requirePage(page: Page | null): asserts page is Page {
+export function requirePage(page: RecruitPage | null): asserts page is RecruitPage {
   if (!page) {
     throw new Error('页面未初始化。请先调用 launch() 或 navigate()。');
   }
 }
 
 /** 导航到猎聘页面 */
-export async function navigateTo(page: Page, path: string): Promise<void> {
+export async function navigateTo(page: RecruitPage, path: string): Promise<void> {
   const url = path.startsWith('http') ? path : `https://${LIEPIN_DOMAIN}${path}`;
   await page.goto(url, { waitUntil: 'networkidle2' });
   await sleepRandom();
@@ -228,7 +243,7 @@ export async function navigateTo(page: Page, path: string): Promise<void> {
  *   - 非 2xx 直接抛带状态码的错误
  *   - 非 JSON 响应抛"可能是反爬虫挑战"
  */
-export async function liepinFetch(page: Page, url: string, options: RequestInit = {}): Promise<any> {
+export async function liepinFetch(page: RecruitPage, url: string, options: RequestInit = {}): Promise<any> {
   const result = await page.evaluate(async (fetchUrl, fetchOptions) => {
     try {
       const res = await fetch(fetchUrl, {

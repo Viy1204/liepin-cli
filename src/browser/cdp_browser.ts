@@ -1,6 +1,6 @@
 /**
  * CDP 浏览器实现
- * 基于 Puppeteer-core 和 Chrome DevTools Protocol
+ * Puppeteer 管理连接与进程，页面操作使用按需 CDP 会话。
  *
  * 浏览器**跨命令常驻**：占用固定调试端口，命令结束只断 CDP、不关浏览器，于是
  * 下一条命令直连同一只实例（同一登录态），DSH 的「招聘浏览器」面板也能并行挂上来
@@ -13,9 +13,10 @@
 
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
-import puppeteer, { Browser, Page } from 'puppeteer-core';
+import puppeteer, { type Browser } from 'puppeteer-core';
 import { config } from '../config.js';
 import { safeGoto } from '../common/lpt-utils.js';
+import { RecruitPageSession, type RecruitPage } from './recruit-page.js';
 
 export interface BrowserOptions {
   headless?: boolean;
@@ -64,8 +65,8 @@ const LAUNCH_READY_MS = 30_000;
  * ⚠️ 不能说已证明「无头是唯一成因」——调用频次、issue #21 的重登循环都可能有份。但
  * UA 自报这条是确定存在的送分题，先摘掉；代价（有头窗口抢键盘焦点）已知且可控。
  *
- * 0819 的 Chrome 151 测试曾观察到加载期 Runtime 状态与清页有关，safeGoto 处理显式导航。
- * 这不保证后续 Chrome 或自定义点击流程稳定；#23 的间歇清页触发原因仍未确定。
+ * 有头模式也会遇到页面清空；页面连接不再启用不需要的 Runtime/console 调试订阅。
+ * 若主页面仍被清空，保持停止语义，不能靠重启或自动刷新继续。
  *
  * `RECRUIT_BROWSER_HIDDEN` 的语义仍是「统一覆盖」而不是「提供默认值」。想回到无头：
  * `LIEPIN_HEADLESS=true`。
@@ -234,9 +235,29 @@ export async function closeRemoteBrowser(port: number = REMOTE_DEBUGGING_PORT): 
   }
 }
 
+export function selectRecruitTarget<T extends { type(): string; url(): string }>(targets: T[], freshBrowser = false): T | undefined {
+  const pages = targets.filter(target => target.type() === 'page');
+  const recruiterPages = pages.filter(target => {
+    try {
+      return ['lpt.liepin.com', 'safe.liepin.com'].includes(new URL(target.url()).hostname);
+    } catch {
+      return false;
+    }
+  });
+  if (recruiterPages.length === 1) return recruiterPages[0];
+  if (recruiterPages.length > 1) {
+    throw new Error('猎聘浏览器打开了多个招聘页面，请保留需要操作的一个标签页后再运行命令');
+  }
+  if (pages.length === 1 && pages[0].url() === 'about:blank') return pages[0];
+  if (freshBrowser && pages.every(target => ['chrome://newtab/', 'chrome://new-tab-page/'].includes(target.url()))) return undefined;
+  if (pages.length > 0) throw new Error('猎聘浏览器中没有可用的招聘页面，请先在现有窗口打开猎聘');
+  return undefined;
+}
+
 export class CdpBrowser {
   private browser: Browser | null = null;
-  private page: Page | null = null;
+  private page: RecruitPageSession | null = null;
+  private connectionAbort: AbortController | null = null;
   private options: BrowserOptions;
 
   constructor(options: BrowserOptions = {}) {
@@ -249,27 +270,57 @@ export class CdpBrowser {
   }
 
   /** 连上浏览器：端口上已有实例就复用，没有才拉起一只。 */
-  async launch(): Promise<Page> {
-    if (this.browser) {
-      return this.page!;
+  async launch(): Promise<RecruitPage> {
+    if (this.page) {
+      if (!this.page.isClosed()) return this.page;
+      throw new Error('页面连接已断开，请检查现有浏览器；不会自动重新连接');
     }
 
     const existingWsUrl = await probeRemoteDebuggingWsEndpoint();
     this.browser = existingWsUrl
-      ? await puppeteer.connect({ browserWSEndpoint: existingWsUrl })
+      ? await puppeteer.connect({ browserWSEndpoint: existingWsUrl, defaultViewport: null })
       : await this.spawnAndConnect();
 
-    const pages = (await this.browser.pages()).filter((p) => !p.isClosed());
-    this.page = pages[0] ?? (await this.browser.newPage());
-
-    await this.page.setViewport({
-      width: config.viewport.width,
-      height: config.viewport.height,
-    });
-
-    // 不覆盖 User-Agent：伪造的 UA 与 sec-ch-ua Client Hints、真实平台矛盾，反而是风控指纹
-
-    return this.page;
+    this.connectionAbort = new AbortController();
+    const connectionAbort = this.connectionAbort;
+    this.browser.once('disconnected', () => connectionAbort.abort());
+    try {
+      let target = selectRecruitTarget(this.browser.targets(), !existingWsUrl);
+      let created = false;
+      if (!target) {
+        const session = await this.browser.target().createCDPSession();
+        let createdTargetId: string;
+        try {
+          ({ targetId: createdTargetId } = await session.send('Target.createTarget', { url: 'about:blank' }));
+        } finally {
+          await session.detach();
+        }
+        target = await this.browser.waitForTarget(async candidate => {
+          if (candidate.type() !== 'page') return false;
+          const candidateSession = await candidate.createCDPSession();
+          try {
+            const { targetInfo } = await candidateSession.send('Target.getTargetInfo');
+            return targetInfo.targetId === createdTargetId;
+          } finally {
+            await candidateSession.detach();
+          }
+        });
+        created = true;
+      }
+      const activeTarget = target;
+      this.browser.on('targetdestroyed', destroyed => {
+        if (destroyed === activeTarget) connectionAbort.abort();
+      });
+      this.page = await RecruitPageSession.create(await target.createCDPSession(), {
+        allowInitialBlank: created || !existingWsUrl,
+        signal: connectionAbort.signal,
+      });
+      await this.page.setViewport({ width: config.viewport.width, height: config.viewport.height });
+      return this.page;
+    } catch (error) {
+      this.disconnect();
+      throw error;
+    }
   }
 
   /** 自己 spawn 一只常驻浏览器，再按固定端口连上去。 */
@@ -321,7 +372,7 @@ export class CdpBrowser {
     const deadline = Date.now() + LAUNCH_READY_MS;
     while (Date.now() < deadline) {
       const wsUrl = await probeRemoteDebuggingWsEndpoint();
-      if (wsUrl) return await puppeteer.connect({ browserWSEndpoint: wsUrl });
+      if (wsUrl) return await puppeteer.connect({ browserWSEndpoint: wsUrl, defaultViewport: null });
       await sleep(300);
     }
 
@@ -339,14 +390,14 @@ export class CdpBrowser {
   }
 
   /** 获取当前页面 */
-  async getPage(): Promise<Page> {
+  async getPage(): Promise<RecruitPage> {
     if (!this.page) {
       return this.launch();
     }
     return this.page;
   }
 
-  /** 导航到指定 URL（走 safeGoto 规避猎聘加载期 CDP 检测） */
+  /** 导航到指定 URL，保留清页后的停止语义。 */
   async navigate(url: string): Promise<void> {
     const page = await this.getPage();
     await safeGoto(page, url);
@@ -357,6 +408,8 @@ export class CdpBrowser {
    * DSH 面板的镜像也才有东西可连。要真正关掉用 `liepin quit`。
    */
   disconnect(): void {
+    this.connectionAbort?.abort();
+    this.connectionAbort = null;
     if (this.browser) {
       try {
         this.browser.disconnect();

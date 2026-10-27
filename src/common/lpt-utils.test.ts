@@ -76,34 +76,43 @@ test('lptFetch: 执行上下文销毁时不引导重跑或重发', async () => {
   assert.equal(requests, 1);
 });
 
-/** 记录调用顺序的假 Page：mainFrame().client.send + goto */
-function recordingPage(opts: { gotoError?: Error } = {}) {
-  const calls: string[] = [];
+test('safeGoto: 正常导航等待 networkidle2', async () => {
+  const url = 'https://lpt.liepin.com/job/manager';
+  const navigations: { url: string; options: unknown }[] = [];
   const page: any = {
-    mainFrame: () => ({ client: { send: async (m: string) => { calls.push(m); } } }),
-    goto: async () => {
-      calls.push('goto');
-      if (opts.gotoError) throw opts.gotoError;
+    url: () => url,
+    goto: async (target: string, options: unknown) => {
+      navigations.push({ url: target, options });
     },
   };
-  return { page, calls };
-}
-
-test('safeGoto: 导航期间关闭 Runtime，加载完成后恢复', async () => {
-  const { page, calls } = recordingPage();
-  await safeGoto(page, 'https://lpt.liepin.com/job/manager');
-  assert.deepEqual(calls, ['Runtime.disable', 'goto', 'Runtime.enable']);
+  await safeGoto(page, url);
+  assert.deepEqual(navigations, [{ url, options: { waitUntil: 'networkidle2' } }]);
 });
 
-test('safeGoto: goto 抛错也要恢复 Runtime', async () => {
-  const { page, calls } = recordingPage({ gotoError: new Error('boom') });
-  await assert.rejects(() => safeGoto(page, 'https://lpt.liepin.com/'), /boom/);
-  assert.deepEqual(calls, ['Runtime.disable', 'goto', 'Runtime.enable']);
+test('safeGoto: goto 失败原样传播，不重试', async () => {
+  const failure = new Error('boom');
+  let navigations = 0;
+  const page: any = {
+    url: () => 'about:blank',
+    goto: async () => {
+      navigations++;
+      throw failure;
+    },
+  };
+  await assert.rejects(() => safeGoto(page, 'https://lpt.liepin.com/'), error => error === failure);
+  assert.equal(navigations, 1);
 });
 
-test('safeGoto: 拿不到主会话（mock page）时退化为普通 goto', async () => {
-  const calls: string[] = [];
-  const page: any = { goto: async () => { calls.push('goto'); } };
-  await safeGoto(page, 'https://lpt.liepin.com/');
-  assert.deepEqual(calls, ['goto']);
+test('safeGoto: 导航后主标签被清空时抛 RiskControlError，不返回成功或重试', async () => {
+  let url = 'https://lpt.liepin.com/search';
+  let navigations = 0;
+  const page: any = {
+    url: () => url,
+    goto: async () => {
+      navigations++;
+      url = 'about:blank';
+    },
+  };
+  await assert.rejects(() => safeGoto(page, 'https://lpt.liepin.com/job/manager'), assertStopAndVerify);
+  assert.equal(navigations, 1);
 });

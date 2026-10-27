@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { Page } from 'puppeteer-core';
+import type { RecruitPage } from '../browser/recruit-page.js';
 import {
   resolveCity, resolveCode, resolveSalary, requirePage,
   CITY_CODES, WORKYEAR_CODES, DEGREE_CODES, INDUSTRY_CODES,
@@ -90,6 +90,6 @@ test('requirePage: 抛错当 page 为 null', () => {
 });
 
 test('requirePage: 通过当 page 存在 (类型守卫)', () => {
-  const fakePage = {} as Page;
+  const fakePage = {} as RecruitPage;
   assert.doesNotThrow(() => requirePage(fakePage));
 });

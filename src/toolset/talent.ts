@@ -8,7 +8,7 @@
  *   实际语义是"投递到我的职位的候选人"（apply 列表），跟旧 talent 库语义有差。
  */
 
-import { Page } from 'puppeteer-core';
+import type { RecruitPage } from '../browser/recruit-page.js';
 import { LIEPIN_LPT_API, lptFetch, navigateToLpt } from '../common/lpt-utils.js';
 
 export interface TalentOptions {
@@ -21,7 +21,7 @@ export interface TalentOptions {
   limit?: number;
 }
 
-export async function talent(page: Page, options: TalentOptions): Promise<any[]> {
+export async function talent(page: RecruitPage, options: TalentOptions): Promise<any[]> {
   const {
     query = '',
     city = '',
