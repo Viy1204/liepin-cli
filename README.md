@@ -24,7 +24,7 @@ CLI 通过 Puppeteer/CDP 连接本机 Chrome、Edge 或 Chromium，使用独立�
 - 本机已安装 Chrome、Edge 或 Chromium。CLI 使用 `puppeteer-core`，不会替你下载浏览器。
 - 能正常登录猎聘招聘者端的账号。可读取的资料、沟通次数与联系方式取决于账号权限和候选人授权。
 
-下列上手命令适用于 npm 发布版。2026-10-27 核对的发布版为 `0.2.8`；工作分支中的新能力见文末[源码开发说明](#源码开发说明)。示例中的 `<resume_id>`、`<im_id>` 和 `<jobId>` 要替换为查询结果中的实际值。
+本文对应 `0.2.9` 版本；页面会话和聊天简历标识的变化见[发布说明](https://github.com/Viy1204/liepin-cli/blob/v0.2.9/docs/releases/v0.2.9.md)。示例中的 `<resume_id>`、`<im_id>` 和 `<jobId>` 要替换为查询结果中的实际值。
 
 ### 1. 安装 CLI
 
@@ -120,6 +120,14 @@ liepin chatmsg "<im_id>" --limit 50 --json
 
 `chatmsg` 返回当前取到的消息，按旧到新排列。它读取最近一批消息，最多 100 条，不会自动翻完全部历史记录。消息卡片包含手机号时，`chatmsg` 也会输出该号码。
 
+`0.2.9` 起，简历卡片中的历史标识单独输出为 `card_resume_id`。需要获取能传给 `resume` 的当前简历 ID 时，可显式开启解析：
+
+```bash
+liepin chatmsg "<im_id>" --resolve-resume --json
+```
+
+该选项默认关闭；开启后要求本批消息中有属于目标候选人的简历卡片，并增加一次只读请求，成功时输出 `resume_id`。缺少卡片、卡片缺少 `userId` 或同一会话的标识不一致时直接报错，不回退使用历史 ID。
+
 ## 发起沟通前先确认
 
 `greet`、`request-phone` 和 `request-resume` 会对候选人产生实际动作。执行前确认候选人、关联职位和要发送的内容；由脚本或 Agent 调用时，先取得用户对相应动作的授权。CLI 不会再弹出人工审批提示。
@@ -167,7 +175,7 @@ liepin request-resume "<resume_id>" --json
 | `talent` | `--query "姓名"`、`--page`、`--limit` | 查看投递候选人，默认第 1 页、20 条，单页最多 40 条 |
 | `joblist` | `--status 招聘中`、`--page`、`--limit` | 查看职位；状态筛选作用于本次取得的一页，单页最多 40 条 |
 | `chatlist` | `--limit 30` | 查看最近一批会话 |
-| `chatmsg "<im_id>"` | `--limit 50` | 查看最近一批消息，最多 100 条 |
+| `chatmsg "<im_id>"` | `--limit 50`、`--resolve-resume` | 查看最近一批消息，最多 100 条；可显式解析当前简历 ID |
 | `greet "<简历ID或user_id>"` | `--ejobId`、`--jobId`、`--message` | `--jobId` 是 `--ejobId` 的别名；自定义消息只支持简历 ID |
 | `request-phone "<简历ID>"` | 无命令专属选项 | 向已有会话的候选人索要手机号 |
 | `request-resume "<简历ID>"` | 无命令专属选项 | 向已有会话的候选人索要简历 |
@@ -196,7 +204,7 @@ liepin request-resume "<resume_id>" --json
 
 查询命令加 `--json` 后，标准输出为 JSON 数组或对象，错误信息写入标准错误。建议把 `--json` 放在命令末尾。
 
-npm `0.2.8` 的 `chatmsg --json` 还包含消息来源字段 `source`，可区分 `chat`、`exchange_request`、`exchange_result`、`system` 和 `unknown`；`ext_type`、`biz_type`、`biz_key` 保留协议字段。来源根据协议字段判断，不按消息正文猜测。
+`chatmsg --json` 保留自 `0.2.8` 起的消息来源字段 `source`，可区分 `chat`、`exchange_request`、`exchange_result`、`system` 和 `unknown`；`ext_type`、`biz_type`、`biz_key` 保留协议字段。来源根据协议字段判断，不按消息正文猜测。
 
 `login --json` 仍会输出进度文本，不能直接把整段标准输出当作 JSON 解析。登录超时、登录频率限制或请求按钮不可用时，命令可能以退出码 `0` 返回 `success: false`，调用方还需检查结果字段。
 
@@ -284,7 +292,7 @@ $env:CHROME_PATH="C:\Program Files\Google\Chrome\Application\chrome.exe"
 
 立即停止并保留浏览器。不要自动刷新、重登、重启或循环试探。涉及打招呼、发消息或索要资料时，结果记为待核验，人工检查聊天记录后再决定是否继续。
 
-空白页问题的历史复现见 [Viy1204/liepin-cli#23](https://github.com/Viy1204/liepin-cli/issues/23)。本分支的页面会话实现与 npm `0.2.8` 不同：页面操作按需执行，主页面清空、执行中导航或断连时抛出 `PageUnavailableError`，仍使用退出码 `3` 并保留浏览器。生产路径验收见[页面会话验证记录](experiments/issue23-ui/2026-10-27-page-session.md)；早期自定义 UI 路径另有[独立实验](experiments/issue23-ui/README.md)和[对照记录](experiments/issue23-ui/EVIDENCE.md)。这些路径的验收不能互相替代，一次环境下通过也不能证明所有 Chrome 版本、长期运行或自定义页面流程都稳定，升级不能代替出错后的停止与核验。
+空白页问题的历史复现见 [Viy1204/liepin-cli#23](https://github.com/Viy1204/liepin-cli/issues/23)。`0.2.9` 的页面会话实现与 `0.2.8` 不同：页面操作按需执行，主页面清空、执行中导航或断连时抛出 `PageUnavailableError`，仍使用退出码 `3` 并保留浏览器。生产路径验收见[页面会话验证记录](https://github.com/Viy1204/liepin-cli/blob/v0.2.9/experiments/issue23-ui/2026-10-27-page-session.md)；早期自定义 UI 路径另有[独立实验](https://github.com/Viy1204/liepin-cli/blob/v0.2.9/experiments/issue23-ui/README.md)和[对照记录](https://github.com/Viy1204/liepin-cli/blob/v0.2.9/experiments/issue23-ui/EVIDENCE.md)。这些路径的验收不能互相替代，一次环境下通过也不能证明所有 Chrome 版本、长期运行或自定义页面流程都稳定，升级不能代替出错后的停止与核验。
 
 ### 提示网络地址在境外
 
@@ -334,7 +342,7 @@ node dist/cli/index.js --help
 npm test
 ```
 
-源码构建可能包含尚未发布的改动，先核对所检出的分支和 `package.json`。[Viy1204/liepin-cli#24](https://github.com/Viy1204/liepin-cli/pull/24) 引入的页面会话实现及 `chatmsg --resolve-resume` 未包含在 npm `0.2.8`。此选项默认关闭；目标消息含简历卡片时，显式开启会增加一次只读请求解析当前 `resume_id`。历史卡片的 `card_resume_id` 不能直接当作当前简历 ID；现有消息来源字段仍保留。npm 上手流程不依赖这项能力。
+源码构建可能包含尚未发布的改动，先核对所检出的分支和 `package.json`。[Viy1204/liepin-cli#24](https://github.com/Viy1204/liepin-cli/pull/24) 引入的页面会话实现及 `chatmsg --resolve-resume` 从 `0.2.9` 起提供，未包含在 `0.2.8`。历史卡片的 `card_resume_id` 不能直接当作当前简历 ID；现有消息来源字段仍保留。
 
 开发使用的 CI 和发布配置分别见 [test.yml](.github/workflows/test.yml) 与 [publish.yml](.github/workflows/publish.yml)。发布工作流由 `v*` 标签触发，运行构建和测试后使用 npm Trusted Publishing 发布。
 
