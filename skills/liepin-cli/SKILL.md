@@ -65,10 +65,23 @@ node /tmp/liepin-cli/dist/cli/index.js search 前端工程师 --city 北京 --ex
 ```
 
 ### 查看简历
+
+以下推荐 ID、经历年月及发送确认修复从 `0.2.10` 起提供，`0.2.9` 不包含这些修复。
+
 ```bash
-# 简历详情（简历ID = search 结果里的 resume_id）
-node /tmp/liepin-cli/dist/cli/index.js resume <简历ID>
+# 简历详情（取 search / recommend / talent 返回的 resume_id）
+liepin resume <resume_id> --json
+
+# 聊天里的简历卡片先解析当前 resume_id，再交给 resume
+liepin chatmsg <对方imId> --resolve-resume --json
 ```
+
+`recommend` 的 `talentId` 和 `user_id` 都不是简历 ID；使用从推荐链接提取的 `resume_id`。
+`chatmsg` 的 `card_resume_id` 保留卡片原值，不保证能用于简历详情；使用 `--resolve-resume`
+返回的 `resume_id`。解析要求当前读取范围内有属于该候选人的简历卡片，缺失或身份不一致会报错。
+
+`work_history` 包含起止年月、时长、职位名称与职责，`education_history` 包含起止年月、院校、
+专业和学历。接口未提供日期时只显示已有时长；顶层 `education` 不含院校，也不证明培养形式。
 
 ### 候选人管理
 ```bash
@@ -86,9 +99,16 @@ node /tmp/liepin-cli/dist/cli/index.js request-phone <resume_id>
 node /tmp/liepin-cli/dist/cli/index.js request-resume <resume_id>
 ```
 
-完整闭环是「greet → request-phone → request-resume」。候选人同意后，手机号会以卡片消息
-落进会话，`chatmsg` 会把号码明文一并输出（形如 `[cmd] 138xxxxxxxx`），可直接写台账。
-输出里的 `confirmed: false` 表示按钮点了但没能确认请求已送达，需要人工到网页确认。
+查看简历使用 `resume`，不需要先打招呼或索要。`request-phone` / `request-resume` 会向候选人
+发送请求卡片，仅在已获触达授权且确需索要时执行。已有会话不必重复 `greet`。
+候选人同意后，手机号会以卡片消息落进会话，`chatmsg` 会把号码明文一并输出。
+
+触达命令的 `success: true` 表示本次操作完成，不等于已确认发出消息。`confirmed: true` 才表示
+聊天记录中有本次新增且匹配的我方消息；`confirmed: false` 需要人工核对，不能自动重发。
+`greet` 在已有会话且未传 `--message` 时不发送新招呼，返回 `opened_new_chat: false`。
+新开聊同时补发自定义文本时，预设招呼可能延迟出现，无法可靠区分两次发送，返回未确认；
+已有会话的自定义文本才按新增消息自动确认。
+自定义消息要求传 `resume_id`；`user_id + --message` 会在任何平台动作前报错。
 
 ### 聊天管理
 ```bash
@@ -112,8 +132,9 @@ node /tmp/liepin-cli/dist/cli/index.js chatmsg <对方imId>
 | | `--age` | 年龄区间 `低,高`（如 `25,35`） |
 | | `--page` | 页码 |
 | | `--limit` | 返回条数 |
-| `chatmsg` | `oppositeImId` | 对方 imId（chatlist 的 im_id，必需） |
-| `resume` | `talentId` | 简历 ID（search 的 resume_id，必需） |
+| `chatmsg` | `<oppositeImId>` / `--oppositeImId` | 对方 imId（chatlist 的 im_id，必需，二选一） |
+| | `--resolve-resume` | 从目标卡片解析当前 resume_id，额外一次只读请求 |
+| `resume` | `<talentId>` / `--talentId` | 简历 resIdEncode（search / recommend / talent 的 resume_id，或 chatmsg 解析值）；不要传推荐的 talentId |
 | `greet` | `usercId` | 候选人 resume_id 或 user_id（search/recommend 返回值，必需） |
 | | `--ejobId` | 关联职位 ID（建议传，用于权限校验与归属） |
 | | `--message` | 自定义消息（传 resume_id 时可用） |

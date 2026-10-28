@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { assertLptPageAlive, lptFetch, RiskControlError, safeGoto } from './lpt-utils.js';
+import { assertLptPageAlive, getResumeInfo, lptFetch, RiskControlError, safeGoto } from './lpt-utils.js';
 
 const fakePage = (url: string) => ({ url: () => url }) as any;
 
@@ -116,3 +116,33 @@ test('safeGoto: 导航后主标签被清空时抛 RiskControlError，不返回�
   await assert.rejects(() => safeGoto(page, 'https://lpt.liepin.com/job/manager'), assertStopAndVerify);
   assert.equal(navigations, 1);
 });
+
+for (const sample of [
+  { label: '从 imInfoVo 读取候选人的 IM ID', detail: {}, imInfo: { usercImId: 'candidate-im-id' }, expected: 'candidate-im-id' },
+  { label: '新旧字段同时存在时优先 imInfoVo', detail: { imId: 'legacy-im-id' }, imInfo: { usercImId: 'candidate-im-id' }, expected: 'candidate-im-id' },
+  { label: '兼容旧 resumeDetailVo.imId', detail: { imId: 'legacy-im-id' }, imInfo: undefined, expected: 'legacy-im-id' },
+  { label: '没有 IM ID 时保留空串', detail: {}, imInfo: undefined, expected: '' },
+]) {
+  test(`getResumeInfo: ${sample.label}`, async () => {
+    const page: any = {
+      url: () => 'https://lpt.liepin.com/search',
+      evaluate: async () => ({
+        ok: true,
+        status: 200,
+        text: JSON.stringify({
+          flag: 1,
+          data: {
+            resumeDetailVo: { encodeUsercId: 'candidate-user-id', baseInfo: { name: '候选人' }, ...sample.detail },
+            imInfoVo: sample.imInfo,
+          },
+        }),
+      }),
+    };
+    assert.deepEqual(await getResumeInfo(page, 'resume-id'), {
+      resumeId: 'resume-id',
+      usercId: 'candidate-user-id',
+      imId: sample.expected,
+      name: '候选人',
+    });
+  });
+}

@@ -4,7 +4,7 @@
  * 走 LPT 接口 com.liepin.rresume.usere.pc.resume-view（抓包确认）：
  *   body: pageParamVo={"resIdEncode":"<简历ID>","sfrom":"R_SEARCH_CONDITION"}
  *   resp: data.resumeDetailVo { baseInfo, jobWant, eduExperiences[], workExperiences[], ... }
- * talentId 即 search 返回的 resume_id（resIdEncode）。
+ * talentId 接收 search/recommend/talent 返回或 chatmsg 解析后的 resume_id（resIdEncode）。
  */
 
 import type { RecruitPage } from '../browser/recruit-page.js';
@@ -74,11 +74,15 @@ export async function resume(page: RecruitPage, options: ResumeOptions): Promise
     self_descr: vo.selfDescr || '',
     skills: (vo.credentialNames || []).join('、'),
     languages: joinLines(vo.languages, (l: any) => l.nameShow || ''),
-    work_history: joinLines(vo.workExperiences, (w: any) =>
-      (`${w.timespan || ''} ${w.compName || ''} / ${w.jobTitleName || w.title || ''}`.trim()
-        + (w.duty ? `\n${w.duty}` : ''))),
-    education_history: joinLines(vo.eduExperiences, (e: any) =>
-      `${e.eduTimeSpan || ''} ${e.school || ''} / ${e.special || ''} / ${e.degreeName || ''}`.trim()),
+    work_history: joinLines(vo.workExperiences, (w: any) => {
+      const period = [[w.startShow, w.endShow].filter(Boolean).join('-'), w.timespan].filter(Boolean).join(' ');
+      return `${period} ${w.compName || ''} / ${w.title || w.jobTitleName || ''}`.trim()
+        + (w.duty ? `\n${w.duty}` : '');
+    }),
+    education_history: joinLines(vo.eduExperiences, (e: any) => {
+      const period = [[e.startShow, e.endShow].filter(Boolean).join('-'), e.eduTimeSpan].filter(Boolean).join(' ');
+      return `${period} ${e.school || ''} / ${e.special || ''} / ${e.degreeName || ''}`.trim();
+    }),
     resume_id: String(vo.resId || talentId),
     user_id: String(vo.encodeUsercId || ''),
   };
@@ -87,9 +91,9 @@ export async function resume(page: RecruitPage, options: ResumeOptions): Promise
 /** 简历命令定义 */
 export const resumeCommand = {
   name: 'resume',
-  description: '查看简历详情（招聘者端，传 search 返回的 resume_id）',
+  description: '查看简历详情（招聘者端，传 search/recommend/talent 返回或 chatmsg 解析后的 resume_id）',
   args: [
-    { name: 'talentId', type: 'string', required: true, positional: true, help: '简历 ID（resIdEncode，来自 search 结果）' },
+    { name: 'talentId', type: 'string', required: true, positional: true, help: '简历 ID（resIdEncode，来自 search/recommend/talent 结果或 chatmsg --resolve-resume）' },
   ],
   columns: [
     { header: '字段', key: 'field', width: 15 },

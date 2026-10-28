@@ -18,6 +18,7 @@ import {
   readLptImId,
 } from '../common/lpt-utils.js';
 import { AuthExpiredError, RiskControlError, sleepRandom } from '../common/utils.js';
+import { parseMessageSource } from './chatmsg.js';
 
 export type RequestKind = 'phone' | 'resume';
 
@@ -36,19 +37,38 @@ const ACTION_LABEL: Record<RequestKind, string> = {
   resume: '索要简历',
 };
 
-/** 取会话里最新一条消息的 id，用来判断点击之后到底有没有发出去 */
-async function latestMessageId(page: RecruitPage, oppositeImId: string): Promise<string> {
-  if (!oppositeImId) return '';
+async function readRequestMessages(page: RecruitPage, oppositeImId: string, afterClick = false): Promise<{ imId: string; list: any[] } | null> {
+  if (!oppositeImId) return null;
   const imId = await readLptImId(page);
-  if (!imId) return '';
+  if (!imId) return null;
 
-  const body = `imUserType=2&imId=${encodeURIComponent(imId)}&imApp=1&oppositeImId=${encodeURIComponent(oppositeImId)}&maxMessageId=&pageSize=1`;
-  const data = await lptFetch(page, `${LIEPIN_LPT_API}/api/com.liepin.im.b.chat.chat-list`, {
-    body,
-    clientId: '40342',
-  });
-  if (data.flag !== 1) return '';
-  return String(data.data?.list?.[0]?.msgId || '');
+  let data;
+  try {
+    data = await lptFetch(page, `${LIEPIN_LPT_API}/api/com.liepin.im.b.chat.chat-list`, {
+      body: `imUserType=2&imId=${encodeURIComponent(imId)}&imApp=1&oppositeImId=${encodeURIComponent(oppositeImId)}&maxMessageId=&pageSize=20`,
+      clientId: '40342',
+    });
+  } catch (error) {
+    if (!afterClick || error instanceof AuthExpiredError || error instanceof RiskControlError) throw error;
+    return null;
+  }
+  if (data.flag !== 1 || !Array.isArray(data.data?.list)) {
+    if (afterClick) return null;
+    throw new Error(`读取聊天记录基线失败: ${data.msg || data.message || '响应缺少消息列表'}`);
+  }
+  return { imId, list: data.data.list };
+}
+
+/**
+ * 前端 fe-imb 4.12.8 从 bizData.bizKey 末位解码请求类型（phone=2 / resume=3），
+ * 请求消息的 extType 为 206、bizType 为 4/6/7。三处同时满足才算目标请求。
+ */
+function isTargetRequest(item: any, imId: string, kind: RequestKind): boolean {
+  if (!imId || String(item.msgSendImId || '') !== imId) return false;
+  const source = parseMessageSource(item.payload || '');
+  if (source.source !== 'exchange_request' || !['4', '6', '7'].includes(source.biz_type || '')) return false;
+  const key = source.biz_key || '';
+  return key.length > 0 && key.endsWith(kind === 'phone' ? '2' : '3');
 }
 
 /**
@@ -93,7 +113,8 @@ async function requestFromCandidate(page: RecruitPage, kind: RequestKind, option
   }
 
   const info = await getResumeInfo(page, resumeId);
-  const before = await latestMessageId(page, info.imId);
+  const before = await readRequestMessages(page, info.imId);
+  const beforeIds = new Set(before?.list.map((item: any) => String(item.msgId || '')));
 
   await openResumeImPanel(page, resumeId);
 
@@ -127,16 +148,19 @@ async function requestFromCandidate(page: RecruitPage, kind: RequestKind, option
     await sleepRandom(1200, 2000);
   }
 
-  const after = await latestMessageId(page, info.imId);
+  const after = await readRequestMessages(page, info.imId, true);
   const stateAfter = await readActionState(page, selector);
-  // 会话里多了一条消息，或按钮变成不可点，都说明请求确实发出去了
-  const confirmed = (Boolean(after) && after !== before) || (!stateBefore.disabled && stateAfter.disabled);
+  // 按钮变灰只是旁证；只认可点击后新出现、由自己发出且类型匹配的请求卡片。
+  const confirmed = before !== null && after !== null && after.imId === before.imId && after.list.some(item => {
+    const id = String(item?.msgId || '');
+    return Boolean(id) && !beforeIds.has(id) && isTargetRequest(item, before.imId, kind);
+  });
 
   return {
     success: true,
     message: confirmed
       ? `已向候选人发出「${ACTION_LABEL[kind]}」请求`
-      : `已点击「${ACTION_LABEL[kind]}」，但未能确认请求已送达（会话无新消息、按钮状态也没变）`,
+      : `已点击「${ACTION_LABEL[kind]}」，但未能确认请求已送达（请人工核对聊天记录，不要自动重发）`,
     name: info.name,
     resume_id: resumeId,
     im_id: info.imId,

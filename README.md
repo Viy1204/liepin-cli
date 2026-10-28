@@ -24,7 +24,7 @@ CLI 通过 Puppeteer/CDP 连接本机 Chrome、Edge 或 Chromium，使用独立�
 - 本机已安装 Chrome、Edge 或 Chromium。CLI 使用 `puppeteer-core`，不会替你下载浏览器。
 - 能正常登录猎聘招聘者端的账号。可读取的资料、沟通次数与联系方式取决于账号权限和候选人授权。
 
-本文对应 `0.2.9` 版本；页面会话和聊天简历标识的变化见[发布说明](https://github.com/Viy1204/liepin-cli/blob/v0.2.9/docs/releases/v0.2.9.md)。示例中的 `<resume_id>`、`<im_id>` 和 `<jobId>` 要替换为查询结果中的实际值。
+本文对应 `0.2.10`：推荐结果的 `resume_id`、简历年月及触达确认修复见[发布说明](https://github.com/Viy1204/liepin-cli/blob/v0.2.10/docs/releases/v0.2.10.md)，不包含在 `0.2.9` 中。此前的页面会话和聊天简历标识变化见 [v0.2.9 发布说明](https://github.com/Viy1204/liepin-cli/blob/v0.2.9/docs/releases/v0.2.9.md)。示例中的 `<resume_id>`、`<im_id>` 和 `<jobId>` 要替换为查询结果中的实际值。
 
 ### 1. 安装 CLI
 
@@ -70,7 +70,7 @@ liepin search "前端工程师" --city 北京 --experience 3-5年 --limit 5 --js
 liepin resume "<resume_id>" --json
 ```
 
-简历结果包含工作经历、教育经历、求职意向等字段；缺失字段可能为空。
+简历结果包含工作经历、教育经历、求职意向等字段；缺失字段可能为空。`work_history` 和 `education_history` 是多行字符串，保留接口提供的起止年月与时长，工作职位优先使用名称文本。顶层 `education` 来自首条教育经历，不包含院校或培养形式，不能替代完整教育经历核验。
 
 `search --city` 按候选人现居住地过滤，期望城市另见结果中的 `want_city`。加 `--json` 能读到表格中未显示的标识符和字段。
 
@@ -98,8 +98,8 @@ liepin talent --limit 5 --json
 
 | 字段 | 来源 | 用途 |
 | --- | --- | --- |
-| `resume_id` | `search`、`talent` | 传给 `resume`、`greet`、`request-phone` 或 `request-resume` |
-| `talentId` | `recommend` | 推荐结果的简历标识，可尝试传给 `resume`；若提示无效或无权限，改用 `search` 或 `talent` 的 `resume_id` |
+| `resume_id` | `search`、`recommend`、`talent`，或 `chatmsg --resolve-resume` | 传给 `resume`、`greet`、`request-phone` 或 `request-resume`；推荐结果从 URL 的 `resIdEncode` 提取 |
+| `talentId` | `recommend` | 推荐记录的原始标识，保留以兼容旧输出；不能代替 `resume_id` |
 | `user_id` | `search`、`recommend`、`talent`、`chatlist` | 传给 `greet` 发起默认沟通；不能代替 `chatmsg` 的参数 |
 | `im_id` | `chatlist` | 对方的 IM 标识，传给 `chatmsg` |
 | `jobId` | `joblist` | 传给 `recommend --jobId` 或 `greet --ejobId` |
@@ -156,9 +156,11 @@ liepin request-phone "<resume_id>" --json
 liepin request-resume "<resume_id>" --json
 ```
 
-`greet` 遇到已有会话会跳过建立会话，但传了 `--message` 仍会发送文本。重复执行可能重复发消息。只有 `user_id` 时，只能发起默认沟通，不能补发自定义文本。
+`greet` 遇到已有会话会跳过建立会话，没有 `--message` 时明确返回「本次未发送新消息」；传了 `--message` 仍会尝试发送文本，重复执行可能重复发消息。只有 `user_id` 时只能发起默认沟通，搭配 `--message` 会在页面操作前报错。
 
-索要操作依赖会话中的快捷按钮。结果中的 `confirmed: false` 表示未确认请求送达，需要人工核对；`success: true` 也不能替代送达确认。索要简历命令发送的是请求，不会自动下载候选人的简历附件。
+`greet` 与索要命令均用 `confirmed` 区分操作完成和发送确认：只有本次新增且匹配的我方消息才算确认，旧同文、无关来信或按钮变灰都不算。缺少 IM 标识、默认开聊只得到接口成功或未观察到新消息时，返回 `confirmed: false`，需要人工核对；`success: true` 不能替代发送确认。新开聊同时补发自定义消息时，预设招呼可能延迟出现，无法可靠归属两次发送，因此也保守返回未确认；已有会话的自定义文本可按新消息核验。
+
+索要操作依赖会话中的快捷按钮。索要简历命令发送的是请求，不会自动下载候选人的简历附件。直接读取已有简历使用 `resume`，无需先打招呼或索要。
 
 任何发送动作遇到空白页、断连或未确认结果，都先记为待核验。人工核对聊天记录后再决定后续动作，不要自动重发。
 
@@ -170,7 +172,7 @@ liepin request-resume "<resume_id>" --json
 | --- | --- | --- |
 | `login` | `--timeout 120`、`--force` | 人工登录或复用现有会话 |
 | `search "关键词"` | `--city`、`--experience`、`--salary`、`--degree`、`--industry`、`--user-status`、`--age`、`--page`、`--limit` | 搜索人才，默认第 1 页、20 条 |
-| `resume "<简历ID>"` | 无命令专属选项 | 读取简历字段，受账号查看权限限制 |
+| `resume "<简历ID>"` | 也可用 `--talentId "<resume_id>"` | 值须为 resIdEncode；没有 `--resume-id` 别名，受账号查看权限限制 |
 | `recommend` | `--jobId`、`--limit` | 查看某职位的推荐候选人，默认最多 20 条，单次最多 40 条 |
 | `talent` | `--query "姓名"`、`--page`、`--limit` | 查看投递候选人，默认第 1 页、20 条，单页最多 40 条 |
 | `joblist` | `--status 招聘中`、`--page`、`--limit` | 查看职位；状态筛选作用于本次取得的一页，单页最多 40 条 |

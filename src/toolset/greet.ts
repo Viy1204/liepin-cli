@@ -18,8 +18,9 @@ import {
   readLptImId,
   getResumeInfo,
   openResumeImPanel,
+  assertLptPageAlive,
 } from '../common/lpt-utils.js';
-import { sleepRandom } from '../common/utils.js';
+import { AuthExpiredError, RiskControlError, sleepRandom } from '../common/utils.js';
 
 export interface GreetOptions {
   usercId: string;
@@ -77,20 +78,42 @@ async function pickChatJob(page: RecruitPage, ejobId: string): Promise<ChatJob> 
   return selected;
 }
 
-async function verifyMessageSent(page: RecruitPage, oppositeImId: string, message: string): Promise<boolean> {
-  const imId = await readLptImId(page);
-  if (!imId || !oppositeImId) return false;
+interface MessageBaseline {
+  imId: string;
+  ids: Set<string>;
+}
 
-  const body = `imUserType=2&imId=${encodeURIComponent(imId)}&imApp=1&oppositeImId=${encodeURIComponent(oppositeImId)}&maxMessageId=&pageSize=10`;
+async function readMessageBaseline(page: RecruitPage, oppositeImId: string): Promise<MessageBaseline | null> {
+  if (!oppositeImId) return null;
+  const imId = await readLptImId(page);
+  if (!imId) return null;
   const data = await lptFetch(page, `${LIEPIN_LPT_API}/api/com.liepin.im.b.chat.chat-list`, {
-    body,
+    body: `imUserType=2&imId=${encodeURIComponent(imId)}&imApp=1&oppositeImId=${encodeURIComponent(oppositeImId)}&maxMessageId=&pageSize=10`,
     clientId: '40342',
   });
-  if (data.flag !== 1) return false;
+  if (data.flag !== 1 || !Array.isArray(data.data?.list)) {
+    throw new Error(`读取发送前聊天记录基线失败: ${data.msg || data.message || '响应缺少消息列表'}`);
+  }
+  return { imId, ids: new Set(data.data.list.map((item: any) => String(item.msgId || ''))) };
+}
 
-  const list = data.data?.list || [];
-  return list.some((item: any) => {
-    if (item.msgSendImId !== imId) return false;
+async function verifyMessageSent(page: RecruitPage, oppositeImId: string, message: string, baseline: MessageBaseline | null): Promise<boolean> {
+  if (!baseline) return false;
+  let data;
+  try {
+    data = await lptFetch(page, `${LIEPIN_LPT_API}/api/com.liepin.im.b.chat.chat-list`, {
+      body: `imUserType=2&imId=${encodeURIComponent(baseline.imId)}&imApp=1&oppositeImId=${encodeURIComponent(oppositeImId)}&maxMessageId=&pageSize=10`,
+      clientId: '40342',
+    });
+  } catch (error) {
+    if (error instanceof AuthExpiredError || error instanceof RiskControlError) throw error;
+    return false;
+  }
+  if (data.flag !== 1 || !Array.isArray(data.data?.list)) return false;
+
+  return data.data.list.some((item: any) => {
+    const id = String(item.msgId || '');
+    if (!id || baseline.ids.has(id) || item.msgSendImId !== baseline.imId) return false;
     try {
       const bodyItem = JSON.parse(item.payload || '{}').bodies?.[0];
       return bodyItem?.type === 'txt' && String(bodyItem.msg || '') === message;
@@ -100,7 +123,7 @@ async function verifyMessageSent(page: RecruitPage, oppositeImId: string, messag
   });
 }
 
-async function sendMessageInIm(page: RecruitPage, resumeId: string, oppositeImId: string, message: string): Promise<void> {
+async function sendMessageInIm(page: RecruitPage, resumeId: string, oppositeImId: string, message: string, baseline: MessageBaseline | null): Promise<boolean> {
   await openResumeImPanel(page, resumeId);
 
   // React 受控组件：keyboard.type 中文输入极慢且易超时，execCommand 才能触发 React 状态更新
@@ -115,18 +138,10 @@ async function sendMessageInIm(page: RecruitPage, resumeId: string, oppositeImId
   await page.waitForSelector('.im-ui-basic-send-btn:not([disabled])', { timeout: 5000 });
   await page.click('.im-ui-basic-send-btn:not([disabled])');
   await sleepRandom(1500, 2500);
+  page.assertAvailable();
+  assertLptPageAlive(page, '消息发送后确认');
 
-  const sent = await verifyMessageSent(page, oppositeImId, message);
-  if (!sent) {
-    // imId 缺失或 API 未及时落库时退回页面文本兜底检查
-    const visible = await page.evaluate(
-      (text: string) => document.body.innerText.includes(text),
-      message.split('\n')[0],
-    );
-    if (!visible) {
-      throw new Error('消息发送后未确认成功（聊天记录与页面中均未找到该消息）');
-    }
-  }
+  return verifyMessageSent(page, oppositeImId, message, baseline);
 }
 
 export async function greet(page: RecruitPage, options: GreetOptions): Promise<any> {
@@ -135,6 +150,9 @@ export async function greet(page: RecruitPage, options: GreetOptions): Promise<a
 
   if (!targetId) {
     throw new Error('候选人 ID 不能为空（可传 search 返回的 resume_id 或 user_id）');
+  }
+  if (message && looksLikeUserId(targetId)) {
+    throw new Error('发送自定义消息需要传入 resume_id；仅传 user_id 时只能发起默认沟通');
   }
 
   // 落到 LPT 同源页面即可（后续全走 api-lpt 接口 / 自身 resume/detail 导航）；旧 /im 路由已 404，改用 /recommend
@@ -146,6 +164,9 @@ export async function greet(page: RecruitPage, options: GreetOptions): Promise<a
   const alreadyHasChat = await hasChat(page, resume.usercId);
   let selectedJob: ChatJob | null = null;
 
+  // 基线读取失败须在任何发送动作前停止。
+  const baseline = message ? await readMessageBaseline(page, resume.imId) : null;
+
   if (!alreadyHasChat) {
     selectedJob = await pickChatJob(page, ejobId);
     const priv = await lptFetch(page, `${LIEPIN_LPT_API}/api/com.liepin.imbusiness.bpc.check-chat-privlege`, {
@@ -153,7 +174,10 @@ export async function greet(page: RecruitPage, options: GreetOptions): Promise<a
       clientId: '40342',
     });
     const code = priv?.data?.chatCheckResultCode;
-    if (priv.flag === 1 && code && code !== 'can_chat') {
+    if (priv.flag !== 1) {
+      throw new Error(`检查沟通权限失败: ${priv?.msg || priv?.message || JSON.stringify(priv).slice(0, 200)}`);
+    }
+    if (code && code !== 'can_chat') {
       throw new Error(`无法打招呼（chatCheckResultCode=${code}）：该职位可能已无沟通次数或候选人不可沟通`);
     }
 
@@ -168,16 +192,22 @@ export async function greet(page: RecruitPage, options: GreetOptions): Promise<a
     }
   }
 
+  // 新开聊的预设招呼可能延迟落库，无法与同文的自定义消息可靠区分。
+  const confirmed = message
+    ? await sendMessageInIm(page, resume.resumeId, resume.imId, message, alreadyHasChat ? baseline : null)
+    : false;
+  let resultMessage = alreadyHasChat
+    ? '会话已存在，本次未发送新消息'
+    : '已发起新沟通，预设招呼是否发送尚未确认；请人工核对聊天记录，不要自动重发';
   if (message) {
-    if (!resume.resumeId) {
-      throw new Error('发送自定义消息需要传入 resume_id；仅传 user_id 时只能发起默认沟通');
-    }
-    await sendMessageInIm(page, resume.resumeId, resume.imId, message);
+    resultMessage = !alreadyHasChat
+      ? '已发起新沟通并点击发送自定义消息，但无法区分预设招呼与自定义消息，未能确认本次自定义消息已发送；请人工核对聊天记录，不要自动重发'
+      : confirmed ? '已确认发送自定义消息' : '已点击发送自定义消息，但未能确认本次消息已发送；请人工核对聊天记录，不要自动重发';
   }
-
   return {
     success: true,
-    message: message ? '已发起沟通并发送自定义消息' : '已发起沟通（使用职位预设招呼语）',
+    message: resultMessage,
+    confirmed,
     usercId: resume.usercId,
     resume_id: resume.resumeId,
     im_id: resume.imId,

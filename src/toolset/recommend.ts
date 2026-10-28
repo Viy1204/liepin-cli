@@ -54,6 +54,7 @@ function mapRecommendCandidate(item: any) {
     city: want.wantDqName || resume.cityName || '',
     active_status: resume.activeStatus || '',
     talentId: resume.enresId || '',
+    resume_id: resume.url ? (new URL(resume.url, 'https://lpt.liepin.com').searchParams.get('resIdEncode') || '') : '',
     user_id: resume.enusercId || '',
     im_id: resume.imId || '',
     url: resume.url || '',
@@ -109,6 +110,9 @@ export const recommendCommand = {
     { name: 'page', type: 'int', default: 1, help: '页码（1-based）' },
     { name: 'limit', type: 'int', default: 20, help: '返回条数（1-40）' },
   ],
-  columns: RECOMMEND_COLUMNS,
+  columns: [
+    ...RECOMMEND_COLUMNS,
+    { header: '简历ID', key: 'resume_id', width: 23, noTruncate: true },
+  ],
   func: recommend,
 };

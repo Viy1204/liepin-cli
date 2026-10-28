@@ -232,7 +232,7 @@ export async function getResumeInfo(page: RecruitPage, resumeId: string): Promis
   return {
     resumeId,
     usercId: String(vo.encodeUsercId),
-    imId: String(vo.imId || ''),
+    imId: String(data.data?.imInfoVo?.usercImId || vo.imId || ''),
     name: vo.baseInfo?.name || '',
   };
 }
