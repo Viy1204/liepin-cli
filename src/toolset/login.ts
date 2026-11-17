@@ -181,7 +181,7 @@ export async function login(page: RecruitPage, options: LoginOptions): Promise<a
       console.log('当前浏览器是无头的，正在切换成有头窗口以便扫码...');
       await closeRemoteBrowser();
       process.env.LIEPIN_HEADLESS = 'false';
-      restarted = new CdpBrowser({ headless: false });
+      restarted = new CdpBrowser({ headless: false, allowRiskPage: true });
       activePage = await restarted.launch();
       await safeGoto(activePage, 'https://lpt.liepin.com/');
       await sleep(2000);

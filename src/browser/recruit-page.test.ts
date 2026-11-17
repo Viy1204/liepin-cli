@@ -48,7 +48,7 @@ class FakeSession extends EventEmitter {
     this.emit('Page.lifecycleEvent', { frameId, loaderId, name: 'networkAlmostIdle' });
   }
 
-  async page(options: { allowInitialBlank?: boolean; timeoutMs?: number } = {}) {
+  async page(options: { allowInitialBlank?: boolean; allowRiskPage?: boolean; timeoutMs?: number } = {}) {
     return RecruitPageSession.create(this as unknown as CDPSession, { timeoutMs: 100, signal: this.disconnect.signal, ...options });
   }
 }
@@ -182,6 +182,128 @@ test('已有 blank 页面不可恢复，只有显式新建页面允许初始 bla
   fresh.commit('about:blank', 'blank');
   await assert.rejects(page.evaluate(() => 1), { name: 'RiskControlError' });
   await page.dispose();
+});
+
+test('issue27 初始安全页', async () => {
+  for (const url of [
+    'https://safe.liepin.com/v/intercept/blankpage',
+    'https://safe.liepin.com/page/liepin/captchaPage_PC',
+  ]) {
+    for (const allowInitialBlank of [false, true]) {
+      const session = new FakeSession();
+      session.frame.url = url;
+      try {
+        await assert.rejects(session.page({ allowInitialBlank }), { name: 'RiskControlError' });
+        assert.deepEqual(session.calls.filter(({ method }) =>
+          method.startsWith('Runtime.') || method === 'Page.navigate' || method.startsWith('Emulation.')), []);
+      } finally { await session.detach(); }
+    }
+  }
+});
+
+for (const operation of ['evaluate', 'goto'] as const) {
+  test(`issue27 挂起 ${operation}`, async () => {
+    const session = new FakeSession();
+    const page = await session.page({ timeoutMs: 10000 });
+    session.evaluate = () => new Promise(() => {});
+    session.navigate = () => new Promise(() => {});
+    let settled = false;
+    const pending = (operation === 'evaluate'
+      ? page.evaluate(() => 'request result')
+      : page.goto('https://lpt.liepin.com/search', { waitUntil: 'networkidle2' }))
+      .then(
+        () => ({ status: 'resolved' as const }),
+        error => ({ status: 'rejected' as const, error }),
+      ).finally(() => { settled = true; });
+    try {
+      assert.equal(session.calls.filter(({ method }) =>
+        method === (operation === 'evaluate' ? 'Runtime.evaluate' : 'Page.navigate')).length, 1);
+      session.commit('https://safe.liepin.com/v/intercept/blankpage', 'risk');
+      await setImmediate();
+      assert.equal(settled, true, '安全跳转应立即结束挂起操作，不等待协议超时');
+      const outcome = await pending;
+      assert.equal(outcome.status, 'rejected');
+      if (outcome.status === 'rejected') {
+        assert.ok(outcome.error instanceof Error);
+        assert.equal(outcome.error.name, 'RiskControlError');
+      }
+
+      session.commit('https://lpt.liepin.com/recommend', 'recovered');
+      session.evaluate = undefined;
+      const count = session.calls.length;
+      await assert.rejects(page.evaluate(() => 1), { name: 'RiskControlError' });
+      await assert.rejects(page.goto('https://lpt.liepin.com/search', { waitUntil: 'networkidle2' }), { name: 'RiskControlError' });
+      await assert.rejects(page.click('button'), { name: 'RiskControlError' });
+      await assert.rejects(page.setViewport({ width: 1280, height: 800 }), { name: 'RiskControlError' });
+      assert.equal(session.calls.length, count, '恢复普通 URL 后仍不得发起页面操作');
+    } finally { await page.dispose(); }
+  });
+}
+
+test('issue27 人工登录例外', async () => {
+  const session = new FakeSession();
+  session.frame.url = 'https://safe.liepin.com/v/intercept/blankpage';
+  const page = await session.page({ allowRiskPage: true });
+  try {
+    page.assertAvailable();
+    assert.equal(await page.evaluate(() => 1), 1);
+    session.navigate = async ({ url }) => {
+      session.commit(url);
+      session.idle();
+      return { frameId: 'main', loaderId: 'next' };
+    };
+    await page.goto('https://safe.liepin.com/page/liepin/captchaPage_PC', { waitUntil: 'networkidle2' });
+    session.commit('https://lpt.liepin.com/recommend', 'verified');
+    assert.equal(await page.evaluate(() => 1), 1);
+    session.commit('about:blank', 'blank');
+    await assert.rejects(page.evaluate(() => 1), { name: 'RiskControlError' });
+  } finally { await page.dispose(); }
+});
+
+test('issue27 子 frame 与首次安全信号', async () => {
+  const session = new FakeSession();
+  const page = await session.page();
+  const firstURL = 'https://safe.liepin.com/v/intercept/blankpage';
+  try {
+    session.commit(firstURL, 'child-load', 'child', 'main');
+    assert.equal(await page.evaluate(() => 1), 1);
+    session.emit('Page.navigatedWithinDocument', { frameId: 'main', url: firstURL });
+    let first: unknown;
+    assert.throws(() => page.assertAvailable(), (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal(error.name, 'RiskControlError');
+      assert.ok(error.message.includes(firstURL));
+      first = error;
+      return true;
+    });
+    session.commit('about:blank', 'blank');
+    session.commit('https://lpt.liepin.com/recommend', 'recovered');
+    const count = session.calls.length;
+    await assert.rejects(page.evaluate(() => 1), error => error === first);
+    assert.equal(session.calls.length, count);
+  } finally { await page.dispose(); }
+});
+
+test('issue27 普通超时', async () => {
+  for (const operation of ['evaluate', 'goto']) {
+    const session = new FakeSession();
+    const page = await session.page({ timeoutMs: 15 });
+    session.evaluate = () => new Promise(() => {});
+    session.navigate = () => new Promise(() => {});
+    try {
+      const pending = operation === 'evaluate'
+        ? page.evaluate(() => 1)
+        : page.goto('https://lpt.liepin.com/search', { waitUntil: 'networkidle2', timeout: 15 });
+      await assert.rejects(pending, (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.equal(error.name, 'Error');
+        assert.match(error.message, /超时|timeout/i);
+        return true;
+      });
+      session.evaluate = undefined;
+      assert.equal(await page.evaluate(() => 1), 1);
+    } finally { await page.dispose(); }
+  }
 });
 
 test('初始化清理失败不覆盖原来的页面失效错误', async () => {

@@ -20,6 +20,8 @@ import { requestPhoneCommand, requestResumeCommand } from '../toolset/request.js
 import { joblistCommand } from '../toolset/joblist.js';
 import { skillCommand } from '../toolset/skill.js';
 import { quitCommand } from '../toolset/quit.js';
+import { riskCommand } from '../toolset/risk.js';
+import { assertRiskStopAllowed, recordRiskStop } from '../common/risk-stop.js';
 import { acquireBusyLock, releaseBusyLock } from '../common/busy_lock.js';
 
 /** 从包根 package.json 读取版本号（dist/cli/index.js -> ../../package.json） */
@@ -64,6 +66,7 @@ const commands: Command[] = [
   joblistCommand,
   skillCommand,
   quitCommand,
+  riskCommand,
 ];
 
 /** 显示帮助信息 */
@@ -225,35 +228,41 @@ async function main(): Promise<void> {
     }
   }
 
-  // 验证必需参数
-  for (const arg of cmd.args) {
-    if (arg.required && !cmdOptions[arg.name]) {
-      console.error(`错误: 缺少必需参数 '${arg.name}'`);
-      console.error(`使用 liepin ${command} --help 查看帮助`);
-      process.exit(1);
-    }
-  }
-
   const requiresPage = cmd.requiresPage !== false;
 
-  // login 端口上没有实例时才需要直接拉一只有头的（扫码看不见就没法登录）。
-  // **已有实例一律不动**：先由 login 命令探一次登录态，还有效就直接复用，确实要人工
-  // 扫码时它自己会把无头换成有头。以前无条件关掉重启，把"重试登录"变成了每次都重启
-  // 浏览器的高风险动作，是 issue #21 里账号被判「行为异常」的直接推手。
-  if (command === 'login' && (await probeRemoteHeadless()) === null) {
-    process.env.LIEPIN_HEADLESS = 'false';
-  }
-
-  // 告诉面板「这条命令正在操作这只浏览器」：面板切换有头/无头要关掉浏览器重开，
-  // 会打断我们，所以它需要一个能看见的信号（见 common/busy_lock.ts）。
-  acquireBusyLock(command);
-
-  // 连上浏览器（端口上已有实例就复用，没有才拉起）
-  const browser = requiresPage ? new CdpBrowser() : null;
+  let browser: CdpBrowser | null = null;
+  let busyLockAcquired = false;
   let page: any = null;
 
   try {
-    if (browser) {
+    if (requiresPage) assertRiskStopAllowed();
+
+    // 验证必需参数
+    for (const arg of cmd.args) {
+      if (arg.required && !cmdOptions[arg.name]) {
+        console.error(`错误: 缺少必需参数 '${arg.name}'`);
+        console.error(`使用 liepin ${command} --help 查看帮助`);
+        process.exitCode = 1;
+        return;
+      }
+    }
+
+    if (requiresPage) {
+      // login 端口上没有实例时才需要直接拉一只有头的（扫码看不见就没法登录）。
+      // **已有实例一律不动**：先由 login 命令探一次登录态，还有效就直接复用，确实要人工
+      // 扫码时它自己会把无头换成有头。以前无条件关掉重启，把"重试登录"变成了每次都重启
+      // 浏览器的高风险动作，是 issue #21 里账号被判「行为异常」的直接推手。
+      if (command === 'login' && (await probeRemoteHeadless()) === null) {
+        process.env.LIEPIN_HEADLESS = 'false';
+      }
+
+      // 告诉面板「这条命令正在操作这只浏览器」：面板切换有头/无头要关掉浏览器重开，
+      // 会打断我们，所以它需要一个能看见的信号（见 common/busy_lock.ts）。
+      acquireBusyLock(command);
+      busyLockAcquired = true;
+
+      // 连上浏览器（端口上已有实例就复用，没有才拉起）
+      browser = new CdpBrowser({ allowRiskPage: command === 'login' });
       page = await browser.launch();
     }
 
@@ -267,17 +276,26 @@ async function main(): Promise<void> {
     // 让调用方（脚本 / AI Agent）无需解析文案即可判别错误类别：
     // 2 = 登录态失效（AuthExpiredError），3 = 风控/安全异常（RiskControlError）
     const name = error instanceof Error ? error.name : '';
-    process.exit(name === 'AuthExpiredError' ? 2 : name === 'RiskControlError' ? 3 : 1);
+    if (name === 'RiskControlError') {
+      try {
+        recordRiskStop(command);
+      } catch (writeError) {
+        console.error('本地停止记录保存失败，停止状态未能持久保存，请勿继续自动化:',
+          writeError instanceof Error ? writeError.message : String(writeError));
+      }
+    }
+    process.exitCode = name === 'AuthExpiredError' ? 2 : name === 'RiskControlError' ? 3 : 1;
   } finally {
     // 只断 CDP，不关浏览器：跨命令常驻，下条命令直连同一只实例（同一登录态），
     // DSH 面板的镜像也才有东西可连。要真正关掉用 `liepin quit`。
-    browser?.disconnect();
-    releaseBusyLock();
+    try { browser?.disconnect(); } finally {
+      if (busyLockAcquired) releaseBusyLock();
+    }
   }
 }
 
 // 运行主函数
 main().catch(error => {
   console.error('致命错误:', error instanceof Error ? error.message : String(error));
-  process.exit(1);
+  process.exitCode = 1;
 });

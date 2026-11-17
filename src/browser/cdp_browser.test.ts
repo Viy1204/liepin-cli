@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
+import puppeteer, { type Browser, type CDPSession } from 'puppeteer-core';
 import {
+  CdpBrowser,
   probeRemoteHeadless,
   REMOTE_DEBUGGING_PORT,
   resolveHeadlessFromEnv,
@@ -113,6 +116,50 @@ test('只有本次新启动的浏览器可从默认新标签页创建工作页',
   const newTab = { type: () => 'page', url: () => 'chrome://newtab/' };
   assert.equal(selectRecruitTarget([newTab], true), undefined);
   assert.throws(() => selectRecruitTarget([newTab]), /没有可用的招聘页面/);
+});
+
+test('issue27 安全 target 与人工登录例外', async t => {
+  const methods: string[] = [];
+  const url = 'https://safe.liepin.com/v/intercept/blankpage';
+  class Session extends EventEmitter {
+    detached = false;
+    connection() { return undefined; }
+    async send(method: string): Promise<any> {
+      methods.push(method);
+      if (method === 'Page.getFrameTree') return { frameTree: { frame: { id: 'main', loaderId: 'initial', url } } };
+      if (method === 'Runtime.evaluate') return { result: { type: 'number', value: 1 } };
+      return {};
+    }
+    async detach() { this.detached = true; }
+  }
+  const target = {
+    type: () => 'page',
+    url: () => url,
+    createCDPSession: async () => {
+      methods.push('createCDPSession');
+      return new Session() as unknown as CDPSession;
+    },
+  };
+  const connection = new EventEmitter();
+  const browser = Object.assign(connection, {
+    targets: () => [target],
+    disconnect: () => { connection.emit('disconnected'); },
+  });
+  t.mock.method(globalThis, 'fetch', async () => new Response(JSON.stringify({ webSocketDebuggerUrl: 'ws://fixture.invalid' })));
+  t.mock.method(puppeteer, 'connect', async () => browser as unknown as Browser);
+
+  await assert.rejects(new CdpBrowser().launch(), { name: 'RiskControlError' });
+  assert.equal(methods.length, 0, '默认不能建立页面协议会话或写入视口');
+
+  const manual = new CdpBrowser({ allowRiskPage: true });
+  try {
+    const page = await manual.launch();
+    page.assertAvailable();
+    assert.equal(page.url(), url);
+    assert.equal(await page.evaluate(() => 1), 1);
+    assert.ok(methods.includes('createCDPSession'));
+    assert.ok(methods.includes('Emulation.setDeviceMetricsOverride'));
+  } finally { manual.disconnect(); }
 });
 
 test('probeRemoteHeadless 按 /json/version 的 UA 判模式', async (t) => {

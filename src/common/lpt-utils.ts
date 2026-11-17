@@ -25,8 +25,9 @@ export function isRiskPageUrl(url: string): boolean {
 }
 
 export const RISK_PAGE_HINT =
-  '猎聘安全中心已把账号判为「行为异常」，业务接口会被静默拦截。' +
-  '请勿重试：运行 `liepin login`，在弹出的浏览器窗口里完成图形验证后再继续。';
+  '猎聘出现安全异常，业务接口可能已被拦截。请立即停止自动化，不要自动重试、刷新或重登。' +
+  '使用 `liepin risk --json` 查看本地停止状态，人工核验并确认允许恢复后，' +
+  '才可用 `liepin risk --clear` 清除本地停止记录；这不代表猎聘已解除账号限制。';
 
 const PAGE_BLANKED_HINT =
   '页面失效的触发原因尚未确定，请停止自动化，不要自动重试、刷新或重登。' +
@@ -130,7 +131,7 @@ export async function lptFetch(page: RecruitPage, url: string, opts: { body?: st
     throw new Error(`LPT HTTP 错误: ${res.status}`);
   }
   if (res.text.trim().startsWith('<')) {
-    throw new RiskControlError('LPT 返回了 HTML（可能是反爬虫挑战），请在浏览器中重新登录或完成验证后再试');
+    throw new RiskControlError(`LPT 返回了 HTML（可能是反爬虫挑战）。${RISK_PAGE_HINT}`);
   }
 
   let data: any;
@@ -143,7 +144,7 @@ export async function lptFetch(page: RecruitPage, url: string, opts: { body?: st
   if (data?.flag !== 1) {
     const msg = String(data?.msg || data?.message || '');
     if (RISK_CONTROL_PATTERN.test(msg)) {
-      throw new RiskControlError(`触发猎聘风控：${msg}。请停止自动化操作，在浏览器中手动完成验证后再继续`);
+      throw new RiskControlError(`触发猎聘风控：${msg}。${RISK_PAGE_HINT}`);
     }
     // -1401 / -1701 等登录态失效码：重试无意义，直接指引重登
     if (isAuthExpiredResponse(data)) {
