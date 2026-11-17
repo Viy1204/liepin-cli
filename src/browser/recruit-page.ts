@@ -1,5 +1,6 @@
 import { CDPSessionEvent, type CDPSession, type Connection, type Protocol } from 'puppeteer-core';
-import { PageUnavailableError } from '../common/utils.js';
+import { PageUnavailableError, RiskControlError } from '../common/utils.js';
+import { isRiskPageUrl, RISK_PAGE_HINT } from '../common/lpt-utils.js';
 
 export interface RecruitPage {
   assertAvailable(): void;
@@ -17,13 +18,14 @@ type FrameState = {
   idleLoaders: Set<string>;
 };
 
-type PageOptions = { allowInitialBlank?: boolean; timeoutMs?: number; signal?: AbortSignal };
+type PageOptions = { allowInitialBlank?: boolean; allowRiskPage?: boolean; timeoutMs?: number; signal?: AbortSignal };
 
 export class RecruitPageSession implements RecruitPage {
   readonly #session: CDPSession;
   readonly #connection?: Connection;
   readonly #timeout: number;
   readonly #signal?: AbortSignal;
+  readonly #allowRiskPage: boolean;
   readonly #frames = new Map<string, FrameState>();
   readonly #commits = new Map<string, number>();
   readonly #checks = new Set<() => void>();
@@ -41,6 +43,7 @@ export class RecruitPageSession implements RecruitPage {
     this.#connection?.on(CDPSessionEvent.SessionDetached, this.#onSessionDetached);
     this.#timeout = options.timeoutMs ?? 30000;
     this.#signal = options.signal;
+    this.#allowRiskPage = options.allowRiskPage === true;
     this.#allowInitialBlank = options.allowInitialBlank === true;
     session.on('Page.frameNavigated', this.#onFrame);
     session.on('Page.navigatedWithinDocument', this.#onSameDocument);
@@ -96,7 +99,9 @@ export class RecruitPageSession implements RecruitPage {
 
   #recordURL(url: string): void {
     this.#url = url;
-    if (url === 'about:blank' || url.startsWith('chrome-error://')) {
+    if (!this.#allowRiskPage && isRiskPageUrl(url)) {
+      this.#fault ??= new RiskControlError(`页面被跳转到猎聘安全验证页（当前 ${url}）。${RISK_PAGE_HINT}`);
+    } else if (url === 'about:blank' || url.startsWith('chrome-error://')) {
       if (url === 'about:blank' && this.#allowInitialBlank) return;
       this.#fault ??= new PageUnavailableError(
         `页面已失效（当前 ${url}），停止自动化，不要自动重试、刷新或重登；发送结果待核验，不要自动重发。`,

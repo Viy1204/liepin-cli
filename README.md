@@ -24,7 +24,9 @@ CLI 通过 Puppeteer/CDP 连接本机 Chrome、Edge 或 Chromium，使用独立�
 - 本机已安装 Chrome、Edge 或 Chromium。CLI 使用 `puppeteer-core`，不会替你下载浏览器。
 - 能正常登录猎聘招聘者端的账号。可读取的资料、沟通次数与联系方式取决于账号权限和候选人授权。
 
-本文对应 `0.2.10`：推荐结果的 `resume_id`、简历年月及触达确认修复见[发布说明](https://github.com/Viy1204/liepin-cli/blob/v0.2.10/docs/releases/v0.2.10.md)，不包含在 `0.2.9` 中。此前的页面会话和聊天简历标识变化见 [v0.2.9 发布说明](https://github.com/Viy1204/liepin-cli/blob/v0.2.9/docs/releases/v0.2.9.md)。示例中的 `<resume_id>`、`<im_id>` 和 `<jobId>` 要替换为查询结果中的实际值。
+已发布版本为 `0.2.10`。推荐结果的 `resume_id`、简历年月及触达确认修复见[发布说明](https://github.com/Viy1204/liepin-cli/blob/v0.2.10/docs/releases/v0.2.10.md)，不包含在 `0.2.9` 中。此前的页面会话和聊天简历标识变化见 [v0.2.9 发布说明](https://github.com/Viy1204/liepin-cli/blob/v0.2.9/docs/releases/v0.2.9.md)。示例中的 `<resume_id>`、`<im_id>` 和 `<jobId>` 要替换为查询结果中的实际值。
+
+当前源码新增的风控停止记录和 `risk` 命令尚未随 npm 发布。
 
 ### 1. 安装 CLI
 
@@ -54,7 +56,7 @@ liepin login
 
 CLI 打开可见的浏览器窗口，等待你扫码或输入账号密码，默认等待 120 秒。看到“登录成功”或“登录态仍然有效”后，再执行查询。需要更长的人工操作窗口时使用 `liepin login --timeout 300`。
 
-`login` 会先检查现有会话，仍有效时直接复用。CLI 默认限制 24 小时内最多 3 次交互式登录。`login --force` 会跳过会话复用和这项本地限制，只有人工确认确需重新登录时才使用。
+`login` 会先检查现有会话，仍有效时直接复用。CLI 默认限制 24 小时内最多 3 次交互式登录。`login --force` 会跳过会话复用和这项本地登录频率限制，只有人工确认确需重新登录时才使用。当前源码中的风控停止记录仍会阻止这条命令。
 
 ### 3. 搜索并读取一份简历
 
@@ -266,7 +268,7 @@ $env:CHROME_PATH="C:\Program Files\Google\Chrome\Application\chrome.exe"
 | `CHROME_PATH` | 浏览器可执行文件路径，优先于 `PUPPETEER_EXECUTABLE_PATH` | 自动检测 |
 | `PUPPETEER_EXECUTABLE_PATH` | 浏览器可执行文件路径的备选配置 | 自动检测 |
 | `LIEPIN_USER_DATA_DIR` | 猎聘独立浏览器资料目录 | `~/.liepin-cli/user-data` |
-| `LIEPIN_CONFIG_DIR` | 配置与交互式登录历史目录 | `~/.liepin-cli` |
+| `LIEPIN_CONFIG_DIR` | 配置、交互式登录历史与风控停止记录目录 | `~/.liepin-cli` |
 | `LIEPIN_BROWSER_REMOTE_DEBUGGING_PORT` | 常驻浏览器的调试端口 | `53471` |
 | `RECRUIT_BROWSER_HIDDEN` | 招聘工具链共享的隐藏窗口开关，`true` 使用无头模式 | 未设置，使用可见窗口 |
 | `LIEPIN_HEADLESS` | liepin-cli 专属开关，优先于上一项 | 跟随上一项 |
@@ -286,9 +288,23 @@ $env:CHROME_PATH="C:\Program Files\Google\Chrome\Application\chrome.exe"
 
 ### 出现验证码或安全验证页
 
-退出码 `3` 表示需要停止自动化。由用户在现有可见窗口中检查并完成验证，确认后再决定是否恢复。需要 CLI 等待人工验证时，可由用户主动执行 `liepin login --timeout 300`。
+退出码 `3` 表示需要停止本轮自动化。当前源码会在配置目录写入 `risk-stop.json`，保留首次停止时间与命令。后续需要页面的命令会在探测或连接浏览器前退出，`login --force` 也不能绕过。停止记录不会自动到期，完成验证码或重启 CLI 不会自动解除。
 
-返回 HTML 或无说明的 `{"flag":0}` 时，CLI 也会按安全异常处理，不能直接解释为登录过期或权益不足。账号权限、操作次数和页面状态要分别核对。
+查看本地停止状态。此命令不连接浏览器。
+
+```bash
+liepin risk --json
+```
+
+由用户在现有可见窗口中检查验证页及平台限制。若平台提示限制期限，按平台要求停止操作。用户确认可以恢复后，再显式解除本地停止。
+
+```bash
+liepin risk --clear
+```
+
+这个命令只清除本地停止记录，不检查账号是否解封，也不会自动重试前一条操作。Agent 不得自行解除后继续批量操作。`--clear=false` 不会清除记录。帮助、版本查询、Skill 安装及 `quit` 仍可使用，`quit` 不清除停止记录。
+
+返回 HTML 或无说明的 `{"flag":0}` 时，CLI 也会按安全异常处理，不能直接解释为登录过期或权益不足。账号权限、操作次数和页面状态要分别核对。普通网络超时仍是一般错误，不能仅凭超时推定账号被风控。
 
 ### 页面变为 about:blank 或操作中断连
 

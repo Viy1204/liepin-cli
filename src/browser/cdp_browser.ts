@@ -15,7 +15,7 @@ import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import puppeteer, { type Browser } from 'puppeteer-core';
 import { config } from '../config.js';
-import { safeGoto } from '../common/lpt-utils.js';
+import { isRiskPageUrl, RiskControlError, RISK_PAGE_HINT, safeGoto } from '../common/lpt-utils.js';
 import { RecruitPageSession, type RecruitPage } from './recruit-page.js';
 
 export interface BrowserOptions {
@@ -23,6 +23,7 @@ export interface BrowserOptions {
   proxy?: string;
   userDataDir?: string;
   chromePath?: string;
+  allowRiskPage?: boolean;
 }
 
 /**
@@ -266,6 +267,7 @@ export class CdpBrowser {
       proxy: options.proxy ?? config.proxy,
       userDataDir: options.userDataDir ?? config.userDataDir,
       chromePath: options.chromePath ?? config.chromePath,
+      allowRiskPage: options.allowRiskPage === true,
     };
   }
 
@@ -286,6 +288,9 @@ export class CdpBrowser {
     this.browser.once('disconnected', () => connectionAbort.abort());
     try {
       let target = selectRecruitTarget(this.browser.targets(), !existingWsUrl);
+      if (target && !this.options.allowRiskPage && isRiskPageUrl(target.url())) {
+        throw new RiskControlError(`当前招聘页面是猎聘安全验证页（当前 ${target.url()}）。${RISK_PAGE_HINT}`);
+      }
       let created = false;
       if (!target) {
         const session = await this.browser.target().createCDPSession();
@@ -313,6 +318,7 @@ export class CdpBrowser {
       });
       this.page = await RecruitPageSession.create(await target.createCDPSession(), {
         allowInitialBlank: created || !existingWsUrl,
+        allowRiskPage: this.options.allowRiskPage,
         signal: connectionAbort.signal,
       });
       await this.page.setViewport({ width: config.viewport.width, height: config.viewport.height });
