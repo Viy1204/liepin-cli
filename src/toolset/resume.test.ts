@@ -86,3 +86,23 @@ test('resume: 缺经历列表时返回空字段', async () => {
   assert.equal(result.work_history, '');
   assert.equal(result.education_history, '');
 });
+
+test('resume: 支持显式 --source 和按当前页面路径推断 sfrom', async () => {
+  const { page, requests } = fakeResumePage({ resId: 'resume-id' });
+  await resumeCommand.func(page, { talentId: 'resume-id', source: 'recommend' } as any);
+  const explicitBody = JSON.parse(new URLSearchParams(requests[0].body).get('pageParamVo') || '{}');
+  assert.deepEqual(explicitBody, { resIdEncode: 'resume-id', sfrom: 'R_HOMEPAGE_RECMD' });
+
+  const recommendRequests: Array<{ url: string; body: string }> = [];
+  const recommendPage = {
+    url: () => 'https://lpt.liepin.com/recommend',
+    evaluate: async (_fn: unknown, url?: string, body?: string) => {
+      if (!url) return recommendPage.url();
+      recommendRequests.push({ url, body: body || '' });
+      return { ok: true, status: 200, text: JSON.stringify({ flag: 1, data: { resumeDetailVo: { resId: 'resume-id' } } }) };
+    },
+  };
+  await resumeCommand.func(recommendPage as any, { talentId: 'resume-id' });
+  const inferredBody = JSON.parse(new URLSearchParams(recommendRequests[0].body).get('pageParamVo') || '{}');
+  assert.deepEqual(inferredBody, { resIdEncode: 'resume-id', sfrom: 'R_HOMEPAGE_RECMD' });
+});

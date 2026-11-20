@@ -146,3 +146,65 @@ for (const sample of [
     });
   });
 }
+
+test('lptFetch: 每日简历浏览上限按风控软限流抛 RiskControlError', async () => {
+  const page: any = {
+    url: () => 'https://lpt.liepin.com/search',
+    evaluate: async () => ({
+      ok: true,
+      status: 200,
+      text: JSON.stringify({ flag: 0, msg: '抱歉，已达到每日简历浏览上限！' }),
+    }),
+  };
+  await assert.rejects(
+    () => lptFetch(page, 'https://api-lpt.liepin.com/api/com.liepin.rresume.usere.pc.resume-view'),
+    (error: unknown) => {
+      assert.ok(error instanceof RiskControlError);
+      assert.match(error.message, /每日简历浏览上限/);
+      assert.match(error.message, /停止自动化/);
+      return true;
+    },
+  );
+});
+
+test('lptFetch: 从页面 script[src] 提取 x-fscp-fe-version，缺省时回落空串', async () => {
+  const prevDocument = (globalThis as any).document;
+  const prevWindow = (globalThis as any).window;
+  const prevFetch = globalThis.fetch;
+  const capturedHeaders: Array<Record<string, string>> = [];
+  let scriptSrcs: string[] = [];
+
+  (globalThis as any).document = {
+    cookie: 'XSRF-TOKEN=test-token',
+    querySelectorAll: (sel: string) =>
+      sel === 'script[src]' ? scriptSrcs.map((src) => ({ src })) : [],
+  };
+  (globalThis as any).window = {
+    location: { href: 'https://lpt.liepin.com/recommend' },
+  };
+  globalThis.fetch = (async (_url: any, init: any) => {
+    capturedHeaders.push(init?.headers || {});
+    return { ok: true, status: 200, text: async () => '{"flag":1,"data":{}}' } as any;
+  }) as any;
+
+  const page: any = {
+    url: () => 'https://lpt.liepin.com/recommend',
+    evaluate: async (fn: (...args: any[]) => any, ...args: any[]) => fn(...args),
+  };
+
+  try {
+    scriptSrcs = [
+      'https://concat.lietou-static.com/fe-lpt-pc/v6.12.3/app.js',
+    ];
+    await lptFetch(page, 'https://api-lpt.liepin.com/api/test');
+    assert.equal(capturedHeaders[0]['x-fscp-fe-version'], '6.12.3');
+
+    scriptSrcs = ['https://concat.lietou-static.com/static/vendor.js'];
+    await lptFetch(page, 'https://api-lpt.liepin.com/api/test');
+    assert.equal(capturedHeaders[1]['x-fscp-fe-version'], '');
+  } finally {
+    (globalThis as any).document = prevDocument;
+    (globalThis as any).window = prevWindow;
+    globalThis.fetch = prevFetch;
+  }
+});
