@@ -8,10 +8,11 @@
  */
 
 import type { RecruitPage } from '../browser/recruit-page.js';
-import { LIEPIN_LPT_API, lptFetch, navigateToLpt } from '../common/lpt-utils.js';
+import { LIEPIN_LPT_API, lptFetch, navigateToLpt, resolveSfrom } from '../common/lpt-utils.js';
 
 export interface ResumeOptions {
   talentId: string;
+  source?: string;
 }
 
 function joinLines(items: any[], fmt: (it: any) => string): string {
@@ -19,7 +20,7 @@ function joinLines(items: any[], fmt: (it: any) => string): string {
 }
 
 export async function resume(page: RecruitPage, options: ResumeOptions): Promise<any> {
-  const { talentId } = options;
+  const { talentId, source } = options;
 
   if (!talentId) {
     throw new Error('简历 ID（resIdEncode）不能为空');
@@ -34,7 +35,7 @@ export async function resume(page: RecruitPage, options: ResumeOptions): Promise
   const form = new URLSearchParams();
   form.set('pageParamVo', JSON.stringify({
     resIdEncode: talentId,
-    sfrom: 'R_SEARCH_CONDITION',
+    sfrom: resolveSfrom(source, String(currentUrl)),
   }));
 
   const data = await lptFetch(
@@ -94,6 +95,7 @@ export const resumeCommand = {
   description: '查看简历详情（招聘者端，传 search/recommend/talent 返回或 chatmsg 解析后的 resume_id）',
   args: [
     { name: 'talentId', type: 'string', required: true, positional: true, help: '简历 ID（resIdEncode，来自 search/recommend/talent 结果或 chatmsg --resolve-resume）' },
+    { name: 'source', type: 'string', default: '', help: '候选人来源（search | recommend | talent | chat，缺省按当前页面路径推断）' },
   ],
   columns: [
     { header: '字段', key: 'field', width: 15 },
