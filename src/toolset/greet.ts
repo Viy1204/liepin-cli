@@ -19,6 +19,7 @@ import {
   getResumeInfo,
   openResumeImPanel,
   assertLptPageAlive,
+  resolveSfrom,
 } from '../common/lpt-utils.js';
 import { AuthExpiredError, RiskControlError, sleepRandom } from '../common/utils.js';
 
@@ -27,6 +28,7 @@ export interface GreetOptions {
   ejobId?: string;
   jobId?: string;
   message?: string;
+  source?: string;
 }
 
 interface ChatJob {
@@ -123,8 +125,8 @@ async function verifyMessageSent(page: RecruitPage, oppositeImId: string, messag
   });
 }
 
-async function sendMessageInIm(page: RecruitPage, resumeId: string, oppositeImId: string, message: string, baseline: MessageBaseline | null): Promise<boolean> {
-  await openResumeImPanel(page, resumeId);
+async function sendMessageInIm(page: RecruitPage, resumeId: string, oppositeImId: string, message: string, baseline: MessageBaseline | null, source?: string): Promise<boolean> {
+  await openResumeImPanel(page, resumeId, source);
 
   // React 受控组件：keyboard.type 中文输入极慢且易超时，execCommand 才能触发 React 状态更新
   await page.evaluate((msg: string) => {
@@ -145,8 +147,9 @@ async function sendMessageInIm(page: RecruitPage, resumeId: string, oppositeImId
 }
 
 export async function greet(page: RecruitPage, options: GreetOptions): Promise<any> {
-  const { usercId: targetId, message = '' } = options;
+  const { usercId: targetId, message = '', source } = options;
   const ejobId = options.ejobId || options.jobId || '';
+  const sfrom = resolveSfrom(source);
 
   if (!targetId) {
     throw new Error('候选人 ID 不能为空（可传 search 返回的 resume_id 或 user_id）');
@@ -159,7 +162,7 @@ export async function greet(page: RecruitPage, options: GreetOptions): Promise<a
   await navigateToLpt(page, '/recommend', 2);
   const resume = looksLikeUserId(targetId)
     ? { resumeId: '', usercId: targetId, imId: '', name: '' }
-    : await getResumeInfo(page, targetId);
+    : await getResumeInfo(page, targetId, sfrom);
 
   const alreadyHasChat = await hasChat(page, resume.usercId);
   let selectedJob: ChatJob | null = null;
@@ -181,7 +184,7 @@ export async function greet(page: RecruitPage, options: GreetOptions): Promise<a
       throw new Error(`无法打招呼（chatCheckResultCode=${code}）：该职位可能已无沟通次数或候选人不可沟通`);
     }
 
-    const body = `usercIdEncode=${encodeURIComponent(resume.usercId)}&ejobId=${encodeURIComponent(String(selectedJob.ejobId))}&imSign=&source=R_SEARCH_CONDITION&ext=%7B%7D`;
+    const body = `usercIdEncode=${encodeURIComponent(resume.usercId)}&ejobId=${encodeURIComponent(String(selectedJob.ejobId))}&imSign=&source=${encodeURIComponent(sfrom)}&ext=%7B%7D`;
     const res = await lptFetch(page, `${LIEPIN_LPT_API}/api/com.liepin.im.b.chat.to-chat2`, {
       body,
       clientId: '40342',
@@ -194,7 +197,7 @@ export async function greet(page: RecruitPage, options: GreetOptions): Promise<a
 
   // 新开聊的预设招呼可能延迟落库，无法与同文的自定义消息可靠区分。
   const confirmed = message
-    ? await sendMessageInIm(page, resume.resumeId, resume.imId, message, alreadyHasChat ? baseline : null)
+    ? await sendMessageInIm(page, resume.resumeId, resume.imId, message, alreadyHasChat ? baseline : null, sfrom)
     : false;
   let resultMessage = alreadyHasChat
     ? '会话已存在，本次未发送新消息'
@@ -226,6 +229,7 @@ export const greetCommand = {
     { name: 'ejobId', type: 'string', default: '', help: '关联职位 ID（建议传，用于权限校验与归属）' },
     { name: 'jobId', type: 'string', default: '', help: '关联职位 ID（ejobId 别名）' },
     { name: 'message', type: 'string', default: '', help: '自定义消息（传 resume_id 时可用）' },
+    { name: 'source', type: 'string', default: '', help: '候选人来源（search | recommend | talent | chat）' },
   ],
   columns: [
     { header: '结果', key: 'message', width: 60 },

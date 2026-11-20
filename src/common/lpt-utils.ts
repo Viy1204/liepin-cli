@@ -9,6 +9,37 @@ import { randomUUID } from 'crypto';
 export const LIEPIN_LPT_API = 'https://api-lpt.liepin.com';
 
 const RISK_CONTROL_PATTERN = /验证码|安全验证|请完成验证|操作(过于)?频繁|访问异常|存在风险|风控/;
+const RESUME_LIMIT_PATTERN = /每日简历浏览上限|简历浏览上限/;
+
+const SFROM_BY_SOURCE: Record<string, string> = {
+  search: 'R_SEARCH_CONDITION',
+  recommend: 'R_HOMEPAGE_RECMD',
+  talent: 'R_TALENT',
+  chat: 'R_CHAT',
+};
+
+const PATH_TO_SFROM: Array<[RegExp, string]> = [
+  [/\/recommend(?:\/|$)/, SFROM_BY_SOURCE.recommend],
+  [/\/talent(?:\/|$)/, SFROM_BY_SOURCE.talent],
+  [/\/chat(?:\/|$)/, SFROM_BY_SOURCE.chat],
+  [/\/search(?:\/|$)/, SFROM_BY_SOURCE.search],
+];
+
+export function resolveSfrom(source?: string, pageUrl?: string): string {
+  const trimmed = String(source || '').trim();
+  if (trimmed) {
+    const mapped = SFROM_BY_SOURCE[trimmed.toLowerCase()];
+    if (mapped) return mapped;
+    if (/^R_[A-Z0-9_]+$/.test(trimmed)) return trimmed;
+    throw new Error(`不支持的来源参数 --source=${trimmed}；可选：search | recommend | talent | chat`);
+  }
+  if (pageUrl) {
+    for (const [pattern, code] of PATH_TO_SFROM) {
+      if (pattern.test(pageUrl)) return code;
+    }
+  }
+  return SFROM_BY_SOURCE.search;
+}
 
 export { AuthExpiredError, RiskControlError, PageUnavailableError, RELOGIN_HINT, isAuthExpiredResponse } from './utils.js';
 
@@ -79,7 +110,15 @@ export async function lptFetch(page: RecruitPage, url: string, opts: { body?: st
     try {
       const xsrf = document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith('XSRF-TOKEN='));
       const token = xsrf ? xsrf.split('=').slice(1).join('') : '';
-      
+      let feVersion = '';
+      if (typeof document.querySelectorAll === 'function') {
+        const srcs = Array.from(document.querySelectorAll('script[src]'))
+          .map((el: any) => String(el?.src || ''))
+          .join(' ');
+        const m = srcs.match(/fe[.-]?lpt[.-]?pc\/v?(\d+\.\d+\.\d+)|fe[.-]?v?(\d+\.\d+\.\d+)/i);
+        feVersion = m ? (m[1] || m[2] || '') : '';
+      }
+
       const headers: Record<string, string> = {
         'Accept': 'application/json, text/plain, */*',
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -88,7 +127,7 @@ export async function lptFetch(page: RecruitPage, url: string, opts: { body?: st
         'x-xsrf-token': token,
         'x-fscp-version': '1.1',
         'x-fscp-std-info': `{"client_id": "${fetchClientId}"}`,
-        'x-fscp-fe-version': '',
+        'x-fscp-fe-version': feVersion,
         'x-fscp-trace-id': fetchTraceId,
         'x-fscp-bi-stat': JSON.stringify({ location: window.location.href }),
       };
@@ -145,6 +184,11 @@ export async function lptFetch(page: RecruitPage, url: string, opts: { body?: st
     const msg = String(data?.msg || data?.message || '');
     if (RISK_CONTROL_PATTERN.test(msg)) {
       throw new RiskControlError(`触发猎聘风控：${msg}。${RISK_PAGE_HINT}`);
+    }
+    if (RESUME_LIMIT_PATTERN.test(msg)) {
+      throw new RiskControlError(
+        `触发猎聘简历浏览上限限制：${msg}（权益面板显示「不限」时通常为反爬软限流）。${RISK_PAGE_HINT}`,
+      );
     }
     // -1401 / -1701 等登录态失效码：重试无意义，直接指引重登
     if (isAuthExpiredResponse(data)) {
@@ -209,11 +253,11 @@ export interface LptResumeInfo {
 }
 
 /** 用 resume_id 换候选人的 usercId / imId / 姓名（resume-view 接口） */
-export async function getResumeInfo(page: RecruitPage, resumeId: string): Promise<LptResumeInfo> {
+export async function getResumeInfo(page: RecruitPage, resumeId: string, source?: string): Promise<LptResumeInfo> {
   const form = new URLSearchParams();
   form.set('pageParamVo', JSON.stringify({
     resIdEncode: resumeId,
-    sfrom: 'R_SEARCH_CONDITION',
+    sfrom: resolveSfrom(source),
     applyId: '',
   }));
 
@@ -239,8 +283,9 @@ export async function getResumeInfo(page: RecruitPage, resumeId: string): Promis
 }
 
 /** 打开简历详情页并展开右侧 IM 聊天面板（输入框出现即就绪） */
-export async function openResumeImPanel(page: RecruitPage, resumeId: string): Promise<void> {
-  await safeGoto(page, `https://lpt.liepin.com/resume/detail?resIdEncode=${encodeURIComponent(resumeId)}&sfrom=R_SEARCH_CONDITION`);
+export async function openResumeImPanel(page: RecruitPage, resumeId: string, source?: string): Promise<void> {
+  const sfrom = resolveSfrom(source);
+  await safeGoto(page, `https://lpt.liepin.com/resume/detail?resIdEncode=${encodeURIComponent(resumeId)}&sfrom=${encodeURIComponent(sfrom)}`);
   assertLptPageAlive(page, '打开简历详情');
   await page.waitForSelector('.xpath-open-im-btn', { timeout: 20000 });
   await page.click('.xpath-open-im-btn');
